@@ -47,7 +47,7 @@ exports.assignPhotoEditingTask = async (req, res) => {
 exports.submitPhotoEditingTask = async (req, res) => {
   try {
     const { id } = req.params;
-    const { submittedDate, submittedNotes } = req.body;
+    const { submittedPhotosToEdit, submittedDate, submittedNotes } = req.body;
 
     const task = await PhotoEditingTask.findById(id);
     if (!task)
@@ -56,6 +56,7 @@ exports.submitPhotoEditingTask = async (req, res) => {
     task.status = "Completed";
     task.submittedDate = submittedDate || new Date();
     task.submittedNotes = submittedNotes || "";
+    task.submittedPhotosToEdit = submittedPhotosToEdit;
     await task.save();
 
     res.json({ success: true, message: "Photo Editing Task Submitted", task });

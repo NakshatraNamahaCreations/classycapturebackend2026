@@ -2,6 +2,8 @@ const mongoose = require("mongoose");
 const CollectedData = require("../models/collectedData");
 
 // POST/PUT: add or update a single service unit's collected data
+
+
 // exports.addOrUpdateServiceUnitData = async (req, res) => {
 //   try {
 //     const {
@@ -10,25 +12,31 @@ const CollectedData = require("../models/collectedData");
 //       personName,
 //       systemNumber,
 //       backupSystemNumber,
-
 //       packageId,
 //       packageName,
 //       serviceId,
 //       serviceName,
 //       unitIndex,
-
 //       cameraName,
 //       totalDriveSize,
+//       backupDrive,
+//       driveName,
+//       qualityChecked,
 //       filledSize,
 //       copyingPerson,
 //       copiedLocation,
 //       backupCopiedLocation,
 //       noOfPhotos,
 //       noOfVideos,
+//       firstPhotoTime,     // ✅ NEW
+//       lastPhotoTime,      // ✅ NEW
+//       firstVideoTime,     // ✅ NEW
+//       lastVideoTime,      // ✅ NEW
 //       submissionDate,
 //       notes,
 //     } = req.body;
 
+//     // Validation
 //     if (
 //       !quotationId ||
 //       !quotationUniqueId ||
@@ -54,6 +62,7 @@ const CollectedData = require("../models/collectedData");
 //     let collectedData = await CollectedData.findOne({ quotationId: qId });
 
 //     if (!collectedData) {
+//       // First-time insert
 //       collectedData = new CollectedData({
 //         quotationId: qId,
 //         quotationUniqueId,
@@ -70,12 +79,19 @@ const CollectedData = require("../models/collectedData");
 //             unitIndex: unitIdx,
 //             cameraName,
 //             totalDriveSize,
+//             backupDrive,
+//             driveName,
+//             qualityChecked,
 //             filledSize,
 //             copyingPerson,
 //             copiedLocation,
 //             backupCopiedLocation,
 //             noOfPhotos,
 //             noOfVideos,
+//             firstPhotoTime,   // ✅ NEW
+//             lastPhotoTime,    // ✅ NEW
+//             firstVideoTime,   // ✅ NEW
+//             lastVideoTime,    // ✅ NEW
 //             submissionDate,
 //             notes,
 //             editingStatus: "Pending",
@@ -83,7 +99,7 @@ const CollectedData = require("../models/collectedData");
 //         ],
 //       });
 //     } else {
-//       // personName/systemNumber become immutable after first set
+//       // Lock check
 //       if (collectedData.immutableLock) {
 //         if (
 //           collectedData.personName !== personName ||
@@ -91,15 +107,16 @@ const CollectedData = require("../models/collectedData");
 //         ) {
 //           return res.status(400).json({
 //             success: false,
-//             message: "Person name or System number cannot be changed once set.",
+//             message:
+//               "Person name or System number cannot be changed once set.",
 //           });
 //         }
 //       } else {
-//         // if not locked yet, lock on first update
 //         collectedData.immutableLock = true;
 //         collectedData.personName = personName;
 //         collectedData.systemNumber = systemNumber;
-//         collectedData.quotationUniqueId = quotationUniqueId || collectedData.quotationUniqueId;
+//         collectedData.quotationUniqueId =
+//           quotationUniqueId || collectedData.quotationUniqueId;
 //       }
 
 //       const idx = (collectedData.serviceUnits || []).findIndex(
@@ -110,24 +127,37 @@ const CollectedData = require("../models/collectedData");
 //       );
 
 //       if (idx > -1) {
-//         // Update existing unit (preserve editingStatus)
+//         // Update existing
+//         const oldUnit =
+//           collectedData.serviceUnits[idx].toObject?.() ||
+//           collectedData.serviceUnits[idx];
+
 //         collectedData.serviceUnits[idx] = {
-//           ...collectedData.serviceUnits[idx].toObject(),
+//           ...oldUnit,
 //           packageName,
 //           serviceName,
+//           unitIndex: unitIdx,
 //           cameraName,
 //           totalDriveSize,
+//           backupDrive,
+//           driveName,
+//           qualityChecked,
 //           filledSize,
 //           copyingPerson,
 //           copiedLocation,
+//           backupCopiedLocation,
 //           noOfPhotos,
 //           noOfVideos,
+//           firstPhotoTime,   // ✅ NEW
+//           lastPhotoTime,    // ✅ NEW
+//           firstVideoTime,   // ✅ NEW
+//           lastVideoTime,    // ✅ NEW
 //           submissionDate,
 //           notes,
-//           editingStatus: collectedData.serviceUnits[idx].editingStatus,
+//           editingStatus: oldUnit.editingStatus,
 //         };
 //       } else {
-//         // Insert new unit
+//         // Insert new
 //         collectedData.serviceUnits.push({
 //           packageId: pkgId,
 //           packageName,
@@ -136,11 +166,19 @@ const CollectedData = require("../models/collectedData");
 //           unitIndex: unitIdx,
 //           cameraName,
 //           totalDriveSize,
+//           backupDrive,
+//           driveName,
+//           qualityChecked,
 //           filledSize,
 //           copyingPerson,
 //           copiedLocation,
+//           backupCopiedLocation,
 //           noOfPhotos,
 //           noOfVideos,
+//           firstPhotoTime,   // ✅ NEW
+//           lastPhotoTime,    // ✅ NEW
+//           firstVideoTime,   // ✅ NEW
+//           lastVideoTime,    // ✅ NEW
 //           submissionDate,
 //           notes,
 //           editingStatus: "Pending",
@@ -152,7 +190,9 @@ const CollectedData = require("../models/collectedData");
 //     return res.status(200).json({ success: true, data: collectedData });
 //   } catch (error) {
 //     console.error("Error saving service-unit collected data:", error);
-//     return res.status(500).json({ success: false, message: "Server error" });
+//     return res
+//       .status(500)
+//       .json({ success: false, message: error.message || "Server error" });
 //   }
 // };
 
@@ -169,26 +209,32 @@ exports.addOrUpdateServiceUnitData = async (req, res) => {
       serviceId,
       serviceName,
       unitIndex,
+
       cameraName,
-      totalDriveSize,
+
+      // ✅ NEW storage fields
+      storageTotalCapacityGb,
+      existingDataSizeBeforeEventGb,
+      existingFilesCountBeforeEvent,
+      thisEventDataSizeGb,
+      totalUsedAfterEventGb,
+
       backupDrive,
       driveName,
       qualityChecked,
-      filledSize,
       copyingPerson,
       copiedLocation,
       backupCopiedLocation,
       noOfPhotos,
       noOfVideos,
-      firstPhotoTime,     // ✅ NEW
-      lastPhotoTime,      // ✅ NEW
-      firstVideoTime,     // ✅ NEW
-      lastVideoTime,      // ✅ NEW
+      firstPhotoTime,
+      lastPhotoTime,
+      firstVideoTime,
+      lastVideoTime,
       submissionDate,
       notes,
     } = req.body;
 
-    // Validation
     if (
       !quotationId ||
       !quotationUniqueId ||
@@ -211,10 +257,52 @@ exports.addOrUpdateServiceUnitData = async (req, res) => {
     const srvId = new mongoose.Types.ObjectId(serviceId);
     const unitIdx = Number(unitIndex);
 
+    // ✅ helpers (keeps your DB consistent)
+    const toNumberOrNull = (v) => {
+      if (v === undefined || v === null || v === "") return null;
+      // supports "64 GB" or "64"
+      const n = Number(String(v).replace(/[^0-9.]/g, ""));
+      return Number.isFinite(n) ? n : null;
+    };
+
+    const unitPayload = {
+      packageId: pkgId,
+      packageName,
+      serviceId: srvId,
+      serviceName,
+      unitIndex: unitIdx,
+
+      cameraName: cameraName || "",
+
+      // ✅ NEW storage fields (store as Number)
+      storageTotalCapacityGb: toNumberOrNull(storageTotalCapacityGb),
+      existingDataSizeBeforeEventGb: toNumberOrNull(existingDataSizeBeforeEventGb),
+      existingFilesCountBeforeEvent: toNumberOrNull(existingFilesCountBeforeEvent) ?? 0,
+      thisEventDataSizeGb: toNumberOrNull(thisEventDataSizeGb),
+      totalUsedAfterEventGb: toNumberOrNull(totalUsedAfterEventGb),
+
+      backupDrive: backupDrive || "",
+      driveName: driveName || "",
+      qualityChecked: !!qualityChecked,
+      copyingPerson: copyingPerson || "",
+      copiedLocation: copiedLocation || "",
+      backupCopiedLocation: backupCopiedLocation || "",
+
+      noOfPhotos: toNumberOrNull(noOfPhotos) ?? 0,
+      noOfVideos: toNumberOrNull(noOfVideos) ?? 0,
+
+      firstPhotoTime: firstPhotoTime || "",
+      lastPhotoTime: lastPhotoTime || "",
+      firstVideoTime: firstVideoTime || "",
+      lastVideoTime: lastVideoTime || "",
+
+      submissionDate: submissionDate || null,
+      notes: notes || "",
+    };
+
     let collectedData = await CollectedData.findOne({ quotationId: qId });
 
     if (!collectedData) {
-      // First-time insert
       collectedData = new CollectedData({
         quotationId: qId,
         quotationUniqueId,
@@ -224,28 +312,7 @@ exports.addOrUpdateServiceUnitData = async (req, res) => {
         immutableLock: true,
         serviceUnits: [
           {
-            packageId: pkgId,
-            packageName,
-            serviceId: srvId,
-            serviceName,
-            unitIndex: unitIdx,
-            cameraName,
-            totalDriveSize,
-            backupDrive,
-            driveName,
-            qualityChecked,
-            filledSize,
-            copyingPerson,
-            copiedLocation,
-            backupCopiedLocation,
-            noOfPhotos,
-            noOfVideos,
-            firstPhotoTime,   // ✅ NEW
-            lastPhotoTime,    // ✅ NEW
-            firstVideoTime,   // ✅ NEW
-            lastVideoTime,    // ✅ NEW
-            submissionDate,
-            notes,
+            ...unitPayload,
             editingStatus: "Pending",
           },
         ],
@@ -259,8 +326,7 @@ exports.addOrUpdateServiceUnitData = async (req, res) => {
         ) {
           return res.status(400).json({
             success: false,
-            message:
-              "Person name or System number cannot be changed once set.",
+            message: "Person name or System number cannot be changed once set.",
           });
         }
       } else {
@@ -279,60 +345,18 @@ exports.addOrUpdateServiceUnitData = async (req, res) => {
       );
 
       if (idx > -1) {
-        // Update existing
         const oldUnit =
           collectedData.serviceUnits[idx].toObject?.() ||
           collectedData.serviceUnits[idx];
 
         collectedData.serviceUnits[idx] = {
           ...oldUnit,
-          packageName,
-          serviceName,
-          unitIndex: unitIdx,
-          cameraName,
-          totalDriveSize,
-          backupDrive,
-          driveName,
-          qualityChecked,
-          filledSize,
-          copyingPerson,
-          copiedLocation,
-          backupCopiedLocation,
-          noOfPhotos,
-          noOfVideos,
-          firstPhotoTime,   // ✅ NEW
-          lastPhotoTime,    // ✅ NEW
-          firstVideoTime,   // ✅ NEW
-          lastVideoTime,    // ✅ NEW
-          submissionDate,
-          notes,
+          ...unitPayload,
           editingStatus: oldUnit.editingStatus,
         };
       } else {
-        // Insert new
         collectedData.serviceUnits.push({
-          packageId: pkgId,
-          packageName,
-          serviceId: srvId,
-          serviceName,
-          unitIndex: unitIdx,
-          cameraName,
-          totalDriveSize,
-          backupDrive,
-          driveName,
-          qualityChecked,
-          filledSize,
-          copyingPerson,
-          copiedLocation,
-          backupCopiedLocation,
-          noOfPhotos,
-          noOfVideos,
-          firstPhotoTime,   // ✅ NEW
-          lastPhotoTime,    // ✅ NEW
-          firstVideoTime,   // ✅ NEW
-          lastVideoTime,    // ✅ NEW
-          submissionDate,
-          notes,
+          ...unitPayload,
           editingStatus: "Pending",
         });
       }

@@ -1,25 +1,48 @@
 // const mongoose = require("mongoose");
 
-// const EventDataSchema = new mongoose.Schema(
+// const ServiceUnitDataSchema = new mongoose.Schema(
 //   {
-//     eventId: { type: mongoose.Schema.Types.ObjectId, required: true }, // Package ID
-//     eventName: { type: String, required: true },
+//     packageId: { type: mongoose.Schema.Types.ObjectId, required: true },
+//     packageName: { type: String, required: true },
+
+//     serviceId: { type: mongoose.Schema.Types.ObjectId, required: true },
+//     serviceName: { type: String, required: true },
+
+//     unitIndex: { type: Number, required: true, min: 0 },
+
 //     cameraName: { type: String },
 //     totalDriveSize: { type: String },
+
+//     backupDrive: { type: String },
+//     driveName: { type: String },
+//     qualityChecked: { type: Boolean, default: false },
+
 //     filledSize: { type: String },
 //     copyingPerson: { type: String },
 //     copiedLocation: { type: String },
+//     backupCopiedLocation: { type: String },
+
 //     noOfPhotos: { type: Number, default: 0 },
 //     noOfVideos: { type: Number, default: 0 },
+
+//     // ✅ NEW fields matching frontend
+//     firstPhotoTime: { type: String },
+//     lastPhotoTime: { type: String },
+//     firstVideoTime: { type: String },
+//     lastVideoTime: { type: String },
+
 //     submissionDate: { type: Date },
 //     notes: { type: String },
-//     editingStatus: {
-//       type: String,
 
-//       default: "Pending",
-//     },
+// sortingStatus: { type: String, default: "Pending" },
 //   },
 //   { timestamps: true }
+// );
+
+// // Ensure one doc per (package, service, unit)
+// ServiceUnitDataSchema.index(
+//   { packageId: 1, serviceId: 1, unitIndex: 1 },
+//   { unique: true }
 // );
 
 // const CollectedDataSchema = new mongoose.Schema(
@@ -30,19 +53,28 @@
 //       required: true,
 //     },
 //     quotationUniqueId: { type: String, required: true },
+
+//     // Renamed in UI: Couples / Person Name
 //     personName: { type: String, required: true },
+
 //     systemNumber: { type: String, required: true },
+//     backupSystemNumber: { type: String },
 //     immutableLock: { type: Boolean, default: false },
-//     events: [EventDataSchema],
+
+//     // Service-unit-wise collection (replaces events)
+//     serviceUnits: [ServiceUnitDataSchema],
+
 //     totalPhotos: { type: Number, default: 0 },
 //     totalVideos: { type: Number, default: 0 },
 //   },
 //   { timestamps: true }
 // );
 
+// // Auto-calc totals
 // CollectedDataSchema.pre("save", function (next) {
-//   this.totalPhotos = this.events.reduce((sum, ev) => sum + (ev.noOfPhotos || 0), 0);
-//   this.totalVideos = this.events.reduce((sum, ev) => sum + (ev.noOfVideos || 0), 0);
+//   const units = this.serviceUnits || [];
+//   this.totalPhotos = units.reduce((sum, su) => sum + (su.noOfPhotos || 0), 0);
+//   this.totalVideos = units.reduce((sum, su) => sum + (su.noOfVideos || 0), 0);
 //   next();
 // });
 
@@ -61,13 +93,18 @@ const ServiceUnitDataSchema = new mongoose.Schema(
     unitIndex: { type: Number, required: true, min: 0 },
 
     cameraName: { type: String },
-    totalDriveSize: { type: String },
+
+    // ✅ Storage details (GB)
+    storageTotalCapacityGb: { type: String },
+    existingDataSizeBeforeEventGb: { type: String },
+    existingFilesCountBeforeEvent: { type: Number, default: 0 },
+    thisEventDataSizeGb: { type: String },
+    totalUsedAfterEventGb: { type: String },
 
     backupDrive: { type: String },
     driveName: { type: String },
     qualityChecked: { type: Boolean, default: false },
 
-    filledSize: { type: String },
     copyingPerson: { type: String },
     copiedLocation: { type: String },
     backupCopiedLocation: { type: String },
@@ -75,7 +112,6 @@ const ServiceUnitDataSchema = new mongoose.Schema(
     noOfPhotos: { type: Number, default: 0 },
     noOfVideos: { type: Number, default: 0 },
 
-    // ✅ NEW fields matching frontend
     firstPhotoTime: { type: String },
     lastPhotoTime: { type: String },
     firstVideoTime: { type: String },
@@ -86,13 +122,13 @@ const ServiceUnitDataSchema = new mongoose.Schema(
 
     sortingStatus: { type: String, default: "Pending" },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 // Ensure one doc per (package, service, unit)
 ServiceUnitDataSchema.index(
   { packageId: 1, serviceId: 1, unitIndex: 1 },
-  { unique: true }
+  { unique: true },
 );
 
 const CollectedDataSchema = new mongoose.Schema(
@@ -117,7 +153,7 @@ const CollectedDataSchema = new mongoose.Schema(
     totalPhotos: { type: Number, default: 0 },
     totalVideos: { type: Number, default: 0 },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 // Auto-calc totals

@@ -47,6 +47,7 @@ const PhotoEditingTaskSchema = new mongoose.Schema(
       required: true,
       min: 1,
     },
+    submittedPhotosToEdit: { type: Number, default: 0 }, // ✅ not required
 
     assignedDate: {
       type: Date,

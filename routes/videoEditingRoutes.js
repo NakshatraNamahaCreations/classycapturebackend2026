@@ -17,7 +17,6 @@ router.post("/:id/submit", submitVideoEditingTask);
 // Fetch all video editing tasks
 router.get("/", getAllVideoEditingTasks);
 
-
 // Fetch tasks by quotation
 router.get("/quotation/:quotationId", getVideoEditingTasksByQuotation);
 

@@ -591,6 +591,7 @@ exports.getTaskByServiceUnit = async (req, res) => {
   }
 };
 
+
 // exports.getSortedTaskByQuotation = async (req, res) => {
 //   try {
 //     const { quotationId } = req.params;
@@ -610,24 +611,23 @@ exports.getTaskByServiceUnit = async (req, res) => {
 //       .populate({
 //         path: "quotationId",
 //         select: `
-//           quoteTitle
-//           quoteNote
-//           totalAmount
-//           bookingStatus
+//           quotationId
+//           quoteNote 
+//           totalAmount 
+//           bookingStatus 
 //           albums
-
 //         `,
 //       })
 //       .populate({
-//         path:"collectedDataId",
-//         select:`
-//         personName
-//         serviceUnits.packageName
-//         serviceUnits.serviceName
-//         serviceUnits.sortingStatus
-//         serviceUnits.noOfPhotos
-//         serviceUnits.noOfVideos
-//         `
+//         path: "collectedDataId",
+//         select: `
+//           personName
+//           serviceUnits.packageName
+//           serviceUnits.serviceName
+//           serviceUnits.sortingStatus
+//           serviceUnits.noOfPhotos
+//           serviceUnits.noOfVideos
+//         `,
 //       })
 //       .lean();
 
@@ -651,11 +651,27 @@ exports.getTaskByServiceUnit = async (req, res) => {
 //       0
 //     );
 
+//     // Extract common data (same for all tasks)
+//     const commonQuotationData = tasks[0]?.quotationId || null;
+//     const commonCollectedData = tasks[0]?.collectedDataId || null;
+
+//     // Remove duplicated data from individual tasks
+//     const cleanedTasks = tasks.map((task) => {
+//       const {
+//         quotationId: taskQuotation,
+//         collectedDataId: taskCollected,
+//         ...taskData
+//       } = task;
+//       return taskData;
+//     });
+
 //     res.json({
 //       success: true,
 //       totalSortedPhotos,
 //       totalSortedVideos,
-//       data: tasks,
+//       quotation: commonQuotationData, // Moved outside data array
+//       collectedData: commonCollectedData, // Moved outside data array
+//       data: cleanedTasks, // Only task-specific data
 //     });
 //   } catch (err) {
 //     console.error("Error fetching completed tasks:", err);
@@ -666,6 +682,7 @@ exports.getTaskByServiceUnit = async (req, res) => {
 //     });
 //   }
 // };
+
 
 exports.getSortedTaskByQuotation = async (req, res) => {
   try {
@@ -712,11 +729,15 @@ exports.getSortedTaskByQuotation = async (req, res) => {
         message: "No completed tasks found",
         totalSortedPhotos: 0,
         totalSortedVideos: 0,
+        totalCollectedPhotos: 0,   // ✅ added
+        totalCollectedVideos: 0,   // ✅ added
+        quotation: null,
+        collectedData: null,
         data: [],
       });
     }
 
-    // Calculate totals
+    // ✅ totals from sorted tasks
     const totalSortedPhotos = tasks.reduce(
       (sum, t) => sum + (t.submittedPhotos || 0),
       0
@@ -730,6 +751,17 @@ exports.getSortedTaskByQuotation = async (req, res) => {
     const commonQuotationData = tasks[0]?.quotationId || null;
     const commonCollectedData = tasks[0]?.collectedDataId || null;
 
+    // ✅ totals from collectedData.serviceUnits
+    const serviceUnits = commonCollectedData?.serviceUnits || [];
+    const totalCollectedPhotos = serviceUnits.reduce(
+      (sum, u) => sum + (Number(u.noOfPhotos) || 0),
+      0
+    );
+    const totalCollectedVideos = serviceUnits.reduce(
+      (sum, u) => sum + (Number(u.noOfVideos) || 0),
+      0
+    );
+
     // Remove duplicated data from individual tasks
     const cleanedTasks = tasks.map((task) => {
       const {
@@ -740,17 +772,19 @@ exports.getSortedTaskByQuotation = async (req, res) => {
       return taskData;
     });
 
-    res.json({
+    return res.json({
       success: true,
       totalSortedPhotos,
       totalSortedVideos,
-      quotation: commonQuotationData, // Moved outside data array
-      collectedData: commonCollectedData, // Moved outside data array
-      data: cleanedTasks, // Only task-specific data
+      totalCollectedPhotos, // ✅ added
+      totalCollectedVideos, // ✅ added
+      quotation: commonQuotationData,
+      collectedData: commonCollectedData,
+      data: cleanedTasks,
     });
   } catch (err) {
     console.error("Error fetching completed tasks:", err);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "Server error",
       error: err.message,
