@@ -1,8 +1,13 @@
 const mongoose = require("mongoose");
 const CollectedData = require("../models/collectedData");
+const Quotation = require("../models/quotation.model");
+const { getPackageAndServiceQty } = require("../utils/collectionTrack");
+const EventCollectionStatus = require("../models/eventCollectionStatus");
+const {
+  syncEventStatusForPackage,
+} = require("../services/syncEventCollectionStatus");
 
 // POST/PUT: add or update a single service unit's collected data
-
 
 // exports.addOrUpdateServiceUnitData = async (req, res) => {
 //   try {
@@ -17,26 +22,32 @@ const CollectedData = require("../models/collectedData");
 //       serviceId,
 //       serviceName,
 //       unitIndex,
+
 //       cameraName,
-//       totalDriveSize,
+
+//       // ✅ NEW storage fields
+//       storageTotalCapacityGb,
+//       existingDataSizeBeforeEventGb,
+//       existingFilesCountBeforeEvent,
+//       thisEventDataSizeGb,
+//       totalUsedAfterEventGb,
+
 //       backupDrive,
 //       driveName,
 //       qualityChecked,
-//       filledSize,
 //       copyingPerson,
 //       copiedLocation,
 //       backupCopiedLocation,
 //       noOfPhotos,
 //       noOfVideos,
-//       firstPhotoTime,     // ✅ NEW
-//       lastPhotoTime,      // ✅ NEW
-//       firstVideoTime,     // ✅ NEW
-//       lastVideoTime,      // ✅ NEW
+//       firstPhotoTime,
+//       lastPhotoTime,
+//       firstVideoTime,
+//       lastVideoTime,
 //       submissionDate,
 //       notes,
 //     } = req.body;
 
-//     // Validation
 //     if (
 //       !quotationId ||
 //       !quotationUniqueId ||
@@ -59,10 +70,52 @@ const CollectedData = require("../models/collectedData");
 //     const srvId = new mongoose.Types.ObjectId(serviceId);
 //     const unitIdx = Number(unitIndex);
 
+//     // ✅ helpers (keeps your DB consistent)
+//     const toNumberOrNull = (v) => {
+//       if (v === undefined || v === null || v === "") return null;
+//       // supports "64 GB" or "64"
+//       const n = Number(String(v).replace(/[^0-9.]/g, ""));
+//       return Number.isFinite(n) ? n : null;
+//     };
+
+//     const unitPayload = {
+//       packageId: pkgId,
+//       packageName,
+//       serviceId: srvId,
+//       serviceName,
+//       unitIndex: unitIdx,
+
+//       cameraName: cameraName || "",
+
+//       // ✅ NEW storage fields (store as Number)
+//       storageTotalCapacityGb: toNumberOrNull(storageTotalCapacityGb),
+//       existingDataSizeBeforeEventGb: toNumberOrNull(existingDataSizeBeforeEventGb),
+//       existingFilesCountBeforeEvent: toNumberOrNull(existingFilesCountBeforeEvent) ?? 0,
+//       thisEventDataSizeGb: toNumberOrNull(thisEventDataSizeGb),
+//       totalUsedAfterEventGb: toNumberOrNull(totalUsedAfterEventGb),
+
+//       backupDrive: backupDrive || "",
+//       driveName: driveName || "",
+//       qualityChecked: !!qualityChecked,
+//       copyingPerson: copyingPerson || "",
+//       copiedLocation: copiedLocation || "",
+//       backupCopiedLocation: backupCopiedLocation || "",
+
+//       noOfPhotos: toNumberOrNull(noOfPhotos) ?? 0,
+//       noOfVideos: toNumberOrNull(noOfVideos) ?? 0,
+
+//       firstPhotoTime: firstPhotoTime || "",
+//       lastPhotoTime: lastPhotoTime || "",
+//       firstVideoTime: firstVideoTime || "",
+//       lastVideoTime: lastVideoTime || "",
+
+//       submissionDate: submissionDate || null,
+//       notes: notes || "",
+//     };
+
 //     let collectedData = await CollectedData.findOne({ quotationId: qId });
 
 //     if (!collectedData) {
-//       // First-time insert
 //       collectedData = new CollectedData({
 //         quotationId: qId,
 //         quotationUniqueId,
@@ -72,28 +125,7 @@ const CollectedData = require("../models/collectedData");
 //         immutableLock: true,
 //         serviceUnits: [
 //           {
-//             packageId: pkgId,
-//             packageName,
-//             serviceId: srvId,
-//             serviceName,
-//             unitIndex: unitIdx,
-//             cameraName,
-//             totalDriveSize,
-//             backupDrive,
-//             driveName,
-//             qualityChecked,
-//             filledSize,
-//             copyingPerson,
-//             copiedLocation,
-//             backupCopiedLocation,
-//             noOfPhotos,
-//             noOfVideos,
-//             firstPhotoTime,   // ✅ NEW
-//             lastPhotoTime,    // ✅ NEW
-//             firstVideoTime,   // ✅ NEW
-//             lastVideoTime,    // ✅ NEW
-//             submissionDate,
-//             notes,
+//             ...unitPayload,
 //             editingStatus: "Pending",
 //           },
 //         ],
@@ -107,8 +139,7 @@ const CollectedData = require("../models/collectedData");
 //         ) {
 //           return res.status(400).json({
 //             success: false,
-//             message:
-//               "Person name or System number cannot be changed once set.",
+//             message: "Person name or System number cannot be changed once set.",
 //           });
 //         }
 //       } else {
@@ -127,60 +158,18 @@ const CollectedData = require("../models/collectedData");
 //       );
 
 //       if (idx > -1) {
-//         // Update existing
 //         const oldUnit =
 //           collectedData.serviceUnits[idx].toObject?.() ||
 //           collectedData.serviceUnits[idx];
 
 //         collectedData.serviceUnits[idx] = {
 //           ...oldUnit,
-//           packageName,
-//           serviceName,
-//           unitIndex: unitIdx,
-//           cameraName,
-//           totalDriveSize,
-//           backupDrive,
-//           driveName,
-//           qualityChecked,
-//           filledSize,
-//           copyingPerson,
-//           copiedLocation,
-//           backupCopiedLocation,
-//           noOfPhotos,
-//           noOfVideos,
-//           firstPhotoTime,   // ✅ NEW
-//           lastPhotoTime,    // ✅ NEW
-//           firstVideoTime,   // ✅ NEW
-//           lastVideoTime,    // ✅ NEW
-//           submissionDate,
-//           notes,
+//           ...unitPayload,
 //           editingStatus: oldUnit.editingStatus,
 //         };
 //       } else {
-//         // Insert new
 //         collectedData.serviceUnits.push({
-//           packageId: pkgId,
-//           packageName,
-//           serviceId: srvId,
-//           serviceName,
-//           unitIndex: unitIdx,
-//           cameraName,
-//           totalDriveSize,
-//           backupDrive,
-//           driveName,
-//           qualityChecked,
-//           filledSize,
-//           copyingPerson,
-//           copiedLocation,
-//           backupCopiedLocation,
-//           noOfPhotos,
-//           noOfVideos,
-//           firstPhotoTime,   // ✅ NEW
-//           lastPhotoTime,    // ✅ NEW
-//           firstVideoTime,   // ✅ NEW
-//           lastVideoTime,    // ✅ NEW
-//           submissionDate,
-//           notes,
+//           ...unitPayload,
 //           editingStatus: "Pending",
 //         });
 //       }
@@ -257,6 +246,27 @@ exports.addOrUpdateServiceUnitData = async (req, res) => {
     const srvId = new mongoose.Types.ObjectId(serviceId);
     const unitIdx = Number(unitIndex);
 
+    const quotation = await Quotation.findById(qId).lean();
+    if (!quotation) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Quotation not found" });
+    }
+
+    const { qty } = getPackageAndServiceQty(quotation, pkgId, srvId);
+    if (qty == null) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Service not found in quotation" });
+    }
+
+    if (!(unitIdx >= 0 && unitIdx < qty)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid unitIndex. This service qty=${qty}, unitIndex allowed 0 to ${qty - 1}`,
+      });
+    }
+
     // ✅ helpers (keeps your DB consistent)
     const toNumberOrNull = (v) => {
       if (v === undefined || v === null || v === "") return null;
@@ -276,8 +286,11 @@ exports.addOrUpdateServiceUnitData = async (req, res) => {
 
       // ✅ NEW storage fields (store as Number)
       storageTotalCapacityGb: toNumberOrNull(storageTotalCapacityGb),
-      existingDataSizeBeforeEventGb: toNumberOrNull(existingDataSizeBeforeEventGb),
-      existingFilesCountBeforeEvent: toNumberOrNull(existingFilesCountBeforeEvent) ?? 0,
+      existingDataSizeBeforeEventGb: toNumberOrNull(
+        existingDataSizeBeforeEventGb,
+      ),
+      existingFilesCountBeforeEvent:
+        toNumberOrNull(existingFilesCountBeforeEvent) ?? 0,
       thisEventDataSizeGb: toNumberOrNull(thisEventDataSizeGb),
       totalUsedAfterEventGb: toNumberOrNull(totalUsedAfterEventGb),
 
@@ -341,7 +354,7 @@ exports.addOrUpdateServiceUnitData = async (req, res) => {
         (u) =>
           u.packageId?.toString() === pkgId.toString() &&
           u.serviceId?.toString() === srvId.toString() &&
-          Number(u.unitIndex) === unitIdx
+          Number(u.unitIndex) === unitIdx,
       );
 
       if (idx > -1) {
@@ -363,6 +376,8 @@ exports.addOrUpdateServiceUnitData = async (req, res) => {
     }
 
     await collectedData.save();
+    await syncEventStatusForPackage({ quotationId: qId, packageId: pkgId });
+
     return res.status(200).json({ success: true, data: collectedData });
   } catch (error) {
     console.error("Error saving service-unit collected data:", error);
@@ -482,7 +497,7 @@ exports.updateServiceUnitEditingStatus = async (req, res) => {
             "u.unitIndex": unitIdx,
           },
         ],
-      }
+      },
     );
 
     if (!updatedDoc) {
@@ -497,7 +512,7 @@ exports.updateServiceUnitEditingStatus = async (req, res) => {
         (u) =>
           u.packageId?.toString() === pkgId.toString() &&
           u.serviceId?.toString() === srvId.toString() &&
-          Number(u.unitIndex) === unitIdx
+          Number(u.unitIndex) === unitIdx,
       ) || null;
 
     return res.status(200).json({
@@ -514,7 +529,6 @@ exports.updateServiceUnitEditingStatus = async (req, res) => {
     });
   }
 };
-
 
 // GET /api/collected-data/:collectedId/service-unit/:unitId
 exports.getServiceUnitById = async (req, res) => {
@@ -555,6 +569,202 @@ exports.getServiceUnitById = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Server error while fetching service unit",
+    });
+  }
+};
+
+exports.getPendingEventsCount = async (req, res) => {
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const query = {
+      eventEndDateObj: { $lt: today },
+      status: { $ne: "Completed" },
+    };
+
+    const count = await EventCollectionStatus.countDocuments(query);
+
+    return res.status(200).json({
+      success: true,
+      count,
+    });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: e.message });
+  }
+};
+
+
+exports.getPendingEventsToCollect = async (req, res) => {
+  try {
+    const hasPage = req.query.page !== undefined;
+    const hasLimit = req.query.limit !== undefined;
+
+    // If both page & limit present => paginate
+    const usePagination = hasPage && hasLimit;
+
+    const page = usePagination ? Math.max(1, Number(req.query.page || 1)) : 1;
+
+    // ✅ If not paginating, still put a safety cap (change 5000 as you want)
+    const limit = usePagination
+      ? Math.min(100, Math.max(1, Number(req.query.limit || 20)))
+      : Math.min(5000, Number(req.query.max || 5000)); // optional override via ?max=
+
+    const skip = usePagination ? (page - 1) * limit : 0;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const query = {
+      eventEndDateObj: { $lt: today },
+      status: { $ne: "Completed" },
+    };
+
+    // ✅ If you don’t paginate, total is still useful
+    const total = await EventCollectionStatus.countDocuments(query);
+
+    let q = EventCollectionStatus.find(query).sort({ eventEndDateObj: -1 });
+
+    if (usePagination) {
+      q = q.skip(skip).limit(limit);
+    } else {
+      // full but capped to avoid heavy response
+      q = q.limit(limit);
+    }
+
+    const data = await q.lean();
+
+    return res.status(200).json({
+      success: true,
+      data,
+      pagination: usePagination
+        ? { total, page, pages: Math.ceil(total / Number(req.query.limit || 20)) }
+        : { total, page: 1, pages: 1, note: `Returned max ${limit} records` },
+    });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: e.message });
+  }
+};
+
+
+// GET /api/collected-data/sorting/pending-services/count
+exports.countPendingServicesToSort = async (req, res) => {
+  try {
+    const agg = await CollectedData.aggregate([
+      { $unwind: "$serviceUnits" },
+      {
+        $match: {
+          $or: [
+            { "serviceUnits.sortingStatus": { $exists: false } },
+            { "serviceUnits.sortingStatus": { $ne: "Completed" } },
+          ],
+        },
+      },
+      { $count: "total" },
+    ]);
+
+    const total = agg?.[0]?.total || 0;
+
+    return res.status(200).json({
+      success: true,
+      total, // ✅ Pending Services to Sort
+    });
+  } catch (e) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to count pending services to sort",
+      error: e?.message || String(e),
+    });
+  }
+};
+
+
+// GET /api/collected-data/sorting/pending-services?page=1&limit=20
+exports.listPendingServicesToSort = async (req, res) => {
+  try {
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.max(1, Math.min(200, Number(req.query.limit) || 20));
+    const skip = (page - 1) * limit;
+
+    const pipeline = [
+      { $unwind: "$serviceUnits" },
+      {
+        $match: {
+          $or: [
+            { "serviceUnits.sortingStatus": { $exists: false } },
+            { "serviceUnits.sortingStatus": { $ne: "Completed" } },
+          ],
+        },
+      },
+
+      // keep required fields only
+      {
+        $project: {
+          quotationId: 1,
+          quotationUniqueId: 1,
+          personName: 1,
+          systemNumber: 1,
+          backupSystemNumber: 1,
+          immutableLock: 1,
+          createdAt: 1,
+          updatedAt: 1,
+
+          packageId: "$serviceUnits.packageId",
+          packageName: "$serviceUnits.packageName",
+          serviceId: "$serviceUnits.serviceId",
+          serviceName: "$serviceUnits.serviceName",
+          unitIndex: "$serviceUnits.unitIndex",
+          sortingStatus: { $ifNull: ["$serviceUnits.sortingStatus", "Pending"] },
+          submissionDate: "$serviceUnits.submissionDate",
+          noOfPhotos: "$serviceUnits.noOfPhotos",
+          noOfVideos: "$serviceUnits.noOfVideos",
+        },
+      },
+
+      { $sort: { updatedAt: -1 } },
+
+      {
+        $facet: {
+          meta: [{ $count: "total" }],
+          data: [{ $skip: skip }, { $limit: limit }],
+        },
+      },
+      {
+        $addFields: {
+          total: { $ifNull: [{ $arrayElemAt: ["$meta.total", 0] }, 0] },
+          page,
+          limit,
+          totalPages: {
+            $cond: [
+              { $gt: [{ $ifNull: [{ $arrayElemAt: ["$meta.total", 0] }, 0] }, 0] },
+              {
+                $ceil: {
+                  $divide: [
+                    { $ifNull: [{ $arrayElemAt: ["$meta.total", 0] }, 0] },
+                    limit,
+                  ],
+                },
+              },
+              0,
+            ],
+          },
+        },
+      },
+      { $project: { meta: 0 } },
+    ];
+
+    const agg = await CollectedData.aggregate(pipeline);
+    const out = agg?.[0] || { total: 0, page, limit, totalPages: 0, data: [] };
+
+    return res.status(200).json({
+      success: true,
+      ...out,
+    });
+  } catch (e) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to list pending services to sort",
+      error: e?.message || String(e),
     });
   }
 };

@@ -443,9 +443,9 @@ exports.getVendorPaymentsByStatus = async (req, res) => {
       });
     }
 
-    // 1. Fetch quotations except those with bookingStatus = NotBooked
+    // 1. Fetch quotations except those with bookingStatus = Not Booked
     const quotations = await Quotation.find({
-      bookingStatus: { $ne: "NotBooked" },
+      bookingStatus: { $ne: "Not Booked" },
     }).lean();
 
     // 2. Fetch all vendors once and index them

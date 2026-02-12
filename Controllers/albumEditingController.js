@@ -12,6 +12,7 @@ exports.assignAlbumEditingTask = async (req, res) => {
       vendorId,
       vendorName = "",
       taskDescription = "",
+      completionDate
     } = req.body;
 
     if (!quotationId || !albumId || !vendorId) {
@@ -62,6 +63,7 @@ exports.assignAlbumEditingTask = async (req, res) => {
         taskDescription,
         status: "Assigned",
         assignedDate: new Date(),
+        completionDate
       });
     } catch (err) {
       // Task creation failed
@@ -170,3 +172,102 @@ exports.getLatestAlbumTaskByAlbum = async (req, res) => {
       .json({ success: false, message: "Server error.", error: err.message });
   }
 };
+
+
+exports.submitAlbumEditingTask = async (req, res) => {
+  try {
+    const {taskId}= req.params
+    const { submitNote = "", submitDate } = req.body;
+
+    if (!taskId) {
+      return res.status(400).json({
+        success: false,
+        message: "taskId is required.",
+      });
+    }
+
+    // ✅ submitDate must be provided (since you said it comes from req.body)
+    if (!submitDate) {
+      return res.status(400).json({
+        success: false,
+        message: "submitDate is required.",
+      });
+    }
+
+    // ✅ validate submitDate
+    const parsedSubmitDate = new Date(submitDate);
+    if (Number.isNaN(parsedSubmitDate.getTime())) {
+      return res.status(400).json({
+        success: false,
+        message: "submitDate is invalid. Provide a valid date string/ISO.",
+      });
+    }
+
+    // 1) Fetch task
+    const task = await AlbumEditingTask.findById(taskId);
+    if (!task) {
+      return res.status(404).json({
+        success: false,
+        message: "Album editing task not found.",
+      });
+    }
+
+    // prevent double submit
+    if (task.status === "Completed") {
+      return res.status(400).json({
+        success: false,
+        message: "Task is already completed.",
+      });
+    }
+
+    // 2) Update task -> Completed + submit info (from body)
+    task.status = "Completed";
+    task.submitDate = parsedSubmitDate; // ✅ from req.body
+    task.submitNote = submitNote || ""; // ✅ from req.body
+    await task.save();
+
+    // 3) Update album status -> Awaiting Printing Approval
+    const upd = await Quotation.updateOne(
+      { _id: task.quotationId, "albums._id": task.albumId },
+      { $set: { "albums.$.status": "Awaiting Printing Approval" } }
+    );
+
+    if (!upd || upd.modifiedCount !== 1) {
+      // rollback task to keep consistency
+      try {
+        await AlbumEditingTask.updateOne(
+          { _id: task._id },
+          {
+            $set: {
+              status: "Assigned",
+              submitDate: null,
+              submitNote: "",
+            },
+          }
+        );
+      } catch (rollbackErr) {
+        console.error("Rollback failed:", rollbackErr);
+      }
+
+      return res.status(500).json({
+        success: false,
+        message: "Failed to update album status to Awaiting Printing Approval.",
+      });
+    }
+
+    return res.json({
+      success: true,
+      message:
+        "Editing task submitted. Task marked Completed and album moved to Awaiting Printing Approval.",
+      task,
+    });
+  } catch (err) {
+    console.error("submitAlbumEditingTask error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Server error submitting album editing task.",
+      error: err.message,
+    });
+  }
+};
+

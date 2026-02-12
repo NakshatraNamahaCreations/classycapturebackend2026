@@ -5,6 +5,7 @@ const {
   getAlbumEditingTasksByQuotation,
   getAlbumEditingTask,
   getLatestAlbumTaskByAlbum,
+  submitAlbumEditingTask
 } = require("../Controllers/albumEditingController");
 
 // POST assign
@@ -18,5 +19,7 @@ router.get("/:taskId", getAlbumEditingTask);
 
 // GET latest by album (optional helper)
 router.get("/album/:albumId/latest", getLatestAlbumTaskByAlbum);
+router.put("/:taskId/submit", submitAlbumEditingTask);
+
 
 module.exports = router;

@@ -1,10 +1,5 @@
 const mongoose = require("mongoose");
 
-/**
- * 🎥 Video Editing Task Schema
- * Used when assigning all raw clips to be merged and edited into one final video.
- * Stores clip count and intended final duration.
- */
 const VideoEditingTaskSchema = new mongoose.Schema(
   {
     quotationId: {

@@ -32,6 +32,10 @@ const videoEditingRoutes = require("./routes/videoEditingRoutes");
 const albumPhotoSelectionTaskRoutes = require("./routes/albumPhotoSelectionTaskRoutes");
 const albumPhotoSelectedRoutes = require("./routes/albumPhotoSelectedRoutes");
 const albumEditingRoutes = require("./routes/albumEditingRoutes");
+const albumPhotoCorrectionRoutes =require("./routes/albumPhotoCorrectionRoutes");
+const additionalServiceRoutes =require("./routes/additionalService.routes");
+const payementTrackerRoutes =require("./routes/payementTracker.routes")
+const deliverablesRoutes =require("./routes/deliverablesRoutes")
 
 dotenv.config();
 const app = express();
@@ -120,6 +124,10 @@ app.use("/api/other-expenses", otherExpenseRoutes);
 app.use("/api/album-photoselection-task", albumPhotoSelectionTaskRoutes);
 app.use("/api/album-photo-selected", albumPhotoSelectedRoutes);
 app.use("/api/album-editing", albumEditingRoutes);
+app.use("/api/album-photo-correction",albumPhotoCorrectionRoutes );
+app.use("/api/additional-services", additionalServiceRoutes);
+app.use("/api/payment-tracker", payementTrackerRoutes);
+app.use("/api/deliverables", deliverablesRoutes);
 
 app.use((req, res, next) => {
   res.status(404).json({ error: "Route not found" });

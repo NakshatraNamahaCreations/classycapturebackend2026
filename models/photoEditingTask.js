@@ -1,10 +1,6 @@
 const mongoose = require("mongoose");
 
-/**
- * 📸 Photo Editing Task Schema
- * Used when assigning photo editing jobs to vendors.
- * The number of assigned photos must always equal the number submitted back.
- */
+
 const PhotoEditingTaskSchema = new mongoose.Schema(
   {
     quotationId: {

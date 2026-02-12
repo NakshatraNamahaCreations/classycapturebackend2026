@@ -5,6 +5,11 @@ const mongoose = require("mongoose");
 const dayjs = require("dayjs");
 const moment = require("moment");
 const VendorInventory = require("../models/vendorInventory");
+const AdditionalService = require("../models/AdditionalService");
+const PaymentTracker = require("../models/paymentTracker.model");
+const Lead = require("../models/lead");
+const CollectedData = require("../models/collectedData");
+
 // Generate next quotationId like "QN0001"
 async function generateQuotationId() {
   const latestQuotation = await Quotation.findOne({})
@@ -47,7 +52,6 @@ exports.createQuotation = async (req, res) => {
       packages = [],
       installments = [],
       totalAmount = 0,
-      // discountPercent = 0,
       discountValue = 0,
       gstApplied = false,
       gstValue = 0,
@@ -56,6 +60,10 @@ exports.createQuotation = async (req, res) => {
       totalAlbumAmount = 0,
       finalized = false,
       albums = [],
+
+      // ✅ NEW
+      additionalServices = [],
+      totalAdditionalServiceAmount = 0,
     } = req.body;
 
     // Validate required fields
@@ -85,11 +93,20 @@ exports.createQuotation = async (req, res) => {
       amountPaid: inst.amountPaid || 0,
     }));
 
+    const processedAdditionalServices = Array.isArray(additionalServices)
+      ? additionalServices.map((s) => ({
+          serviceId: s.serviceId || s._id || undefined,
+          name: s.name || "",
+          description: s.description || "",
+          price: Number(s.price) || 0,
+        }))
+      : [];
+
     const bookingStatus = processedInstallments.some(
-      (i) => i.status === "Completed"
+      (i) => i.status === "Completed",
     )
       ? "Booked"
-      : "NotBooked";
+      : "Not Booked";
 
     const newQuotation = new Quotation({
       leadId,
@@ -111,6 +128,9 @@ exports.createQuotation = async (req, res) => {
       totalPackageAmt,
       totalAlbumAmount,
       albums,
+      additionalServices: processedAdditionalServices,
+      totalAdditionalServiceAmount: Number(totalAdditionalServiceAmount) || 0,
+
       // albums will default to [] automatically
     });
 
@@ -149,7 +169,6 @@ exports.updateQuotation = async (req, res) => {
       packages,
       installments,
       totalAmount,
-      // discountPercent,
       discountValue,
       gstApplied,
       gstValue,
@@ -158,6 +177,9 @@ exports.updateQuotation = async (req, res) => {
       totalPackageAmt,
       totalAlbumAmount,
       albums,
+      // ✅ NEW
+      additionalServices,
+      totalAdditionalServiceAmount,
     } = req.body;
 
     const quotation = await Quotation.findById(id);
@@ -191,6 +213,22 @@ exports.updateQuotation = async (req, res) => {
     if (albums !== undefined) {
       quotation.albums = albums; // replace whole array
       quotation.markModified("albums"); // ensure nested Map fields persist
+    }
+
+    if (additionalServices !== undefined) {
+      quotation.additionalServices = Array.isArray(additionalServices)
+        ? additionalServices.map((s) => ({
+            serviceId: s.serviceId || s._id || undefined,
+            name: s.name || "",
+            description: s.description || "",
+            price: Number(s.price) || 0,
+          }))
+        : [];
+    }
+
+    if (totalAdditionalServiceAmount !== undefined) {
+      quotation.totalAdditionalServiceAmount =
+        Number(totalAdditionalServiceAmount) || 0;
     }
 
     const updatedQuotation = await quotation.save();
@@ -343,7 +381,7 @@ exports.toggleFinalizedQuotation = async (req, res) => {
       // Unfinalize all others for this queryId (make sure queryId is the correct type)
       await Quotation.updateMany(
         { queryId: quotation.queryId, _id: { $ne: quotation._id } },
-        { $set: { finalized: false } }
+        { $set: { finalized: false } },
       );
       // Set this one as finalized
       quotation.finalized = true;
@@ -571,7 +609,7 @@ exports.deleteInstallment = async (req, res) => {
     }
 
     const installmentIndex = quotation.installments.findIndex(
-      (inst) => String(inst._id) === String(installmentId)
+      (inst) => String(inst._id) === String(installmentId),
     );
 
     if (installmentIndex === -1) {
@@ -660,7 +698,6 @@ exports.deleteQuotation = async (req, res) => {
   }
 };
 
-
 // ---------------- Helper Functions ----------------
 
 // Ensures assignedVendors/Assistants array has enough slots
@@ -672,7 +709,9 @@ exports.deleteQuotation = async (req, res) => {
 
 // // Checks if two date ranges overlap
 function hasOverlap(start1, end1, start2, end2) {
-  return new Date(start1) <= new Date(end2) && new Date(end1) >= new Date(start2);
+  return (
+    new Date(start1) <= new Date(end2) && new Date(end1) >= new Date(start2)
+  );
 }
 
 // // ---------------- Vendor Assignment ----------------
@@ -874,11 +913,12 @@ function hasOverlap(start1, end1, start2, end2) {
 
 // Ensures assignedVendors/Assistants array has enough slots
 
- // Checks if two date ranges overlap
+// Checks if two date ranges overlap
 function hasOverlap(start1, end1, start2, end2) {
-  return new Date(start1) <= new Date(end2) && new Date(end1) >= new Date(start2);
+  return (
+    new Date(start1) <= new Date(end2) && new Date(end1) >= new Date(start2)
+  );
 }
-
 
 function ensureCapacity(arr, len) {
   if (!Array.isArray(arr)) arr = [];
@@ -897,18 +937,29 @@ exports.assignVendorToServiceUnit = async (req, res) => {
 
   try {
     const quotation = await Quotation.findById(quotationId);
-    if (!quotation) return res.status(404).json({ success: false, message: "Quotation not found" });
+    if (!quotation)
+      return res
+        .status(404)
+        .json({ success: false, message: "Quotation not found" });
 
     const pkg = quotation.packages.id(packageId);
-    if (!pkg) return res.status(404).json({ success: false, message: "Package not found" });
+    if (!pkg)
+      return res
+        .status(404)
+        .json({ success: false, message: "Package not found" });
 
     const service = pkg.services.id(serviceId);
-    if (!service) return res.status(404).json({ success: false, message: "Service not found" });
+    if (!service)
+      return res
+        .status(404)
+        .json({ success: false, message: "Service not found" });
 
     const unit = parseInt(unitIndex, 10);
     const qty = Math.max(1, service.qty || 1);
     if (Number.isNaN(unit) || unit < 0 || unit >= qty) {
-      return res.status(400).json({ success: false, message: "Invalid unitIndex" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid unitIndex" });
     }
 
     // Ensure array capacity
@@ -924,14 +975,25 @@ exports.assignVendorToServiceUnit = async (req, res) => {
 
     if (vendorId) {
       const vendor = await Vendor.findById(vendorId);
-      if (!vendor) return res.status(404).json({ success: false, message: "Vendor not found" });
+      if (!vendor)
+        return res
+          .status(404)
+          .json({ success: false, message: "Vendor not found" });
 
       const finalVendorName = vendorName || vendor.name;
 
       // 🛑 Prevent overlapping booking
       const existingBookings = await VendorInventory.find({ vendorId });
       const overlap = existingBookings.some((b) => {
-        if (!hasOverlap(eventStartDate, eventEndDate, b.eventStartDate, b.eventEndDate)) return false;
+        if (
+          !hasOverlap(
+            eventStartDate,
+            eventEndDate,
+            b.eventStartDate,
+            b.eventEndDate,
+          )
+        )
+          return false;
         return slot === "Full Day" || b.slot === "Full Day" || b.slot === slot;
       });
 
@@ -951,7 +1013,9 @@ exports.assignVendorToServiceUnit = async (req, res) => {
         slot,
         eventStartDate,
         eventEndDate,
-        salary: vendor.specialization.find((s) => s.name === service.serviceName)?.salary || 0,
+        salary:
+          vendor.specialization.find((s) => s.name === service.serviceName)
+            ?.salary || 0,
         paymentStatus: "Pending",
       };
 
@@ -982,33 +1046,49 @@ exports.assignVendorToServiceUnit = async (req, res) => {
     });
   } catch (err) {
     console.error("assignVendorToServiceUnit error:", err.message, err.stack);
-    return res.status(500).json({ success: false, message: "Internal server error" });
+    return res
+      .status(500)
+      .json({ success: false, message: "Internal server error" });
   }
 };
 
-
 exports.assignAssistantToServiceUnit = async (req, res) => {
   const { quotationId, packageId, serviceId, unitIndex } = req.params;
-  const { assistantId, assistantName, slot, eventStartDate, eventEndDate } = req.body;
+  const { assistantId, assistantName, slot, eventStartDate, eventEndDate } =
+    req.body;
 
   try {
     const quotation = await Quotation.findById(quotationId);
-    if (!quotation) return res.status(404).json({ success: false, message: "Quotation not found" });
+    if (!quotation)
+      return res
+        .status(404)
+        .json({ success: false, message: "Quotation not found" });
 
     const pkg = quotation.packages.id(packageId);
-    if (!pkg) return res.status(404).json({ success: false, message: "Package not found" });
+    if (!pkg)
+      return res
+        .status(404)
+        .json({ success: false, message: "Package not found" });
 
     const service = pkg.services.id(serviceId);
-    if (!service) return res.status(404).json({ success: false, message: "Service not found" });
+    if (!service)
+      return res
+        .status(404)
+        .json({ success: false, message: "Service not found" });
 
     const unit = parseInt(unitIndex, 10);
     const qty = Math.max(1, service.qty || 1);
     if (Number.isNaN(unit) || unit < 0 || unit >= qty) {
-      return res.status(400).json({ success: false, message: "Invalid unitIndex" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid unitIndex" });
     }
 
     // Ensure array capacity
-    service.assignedAssistants = ensureCapacity(service.assignedAssistants, qty);
+    service.assignedAssistants = ensureCapacity(
+      service.assignedAssistants,
+      qty,
+    );
 
     // 🔴 Always remove old VendorInventory for this unit
     await VendorInventory.deleteOne({
@@ -1020,14 +1100,27 @@ exports.assignAssistantToServiceUnit = async (req, res) => {
 
     if (assistantId) {
       const asst = await Vendor.findById(assistantId);
-      if (!asst) return res.status(404).json({ success: false, message: "Assistant vendor not found" });
+      if (!asst)
+        return res
+          .status(404)
+          .json({ success: false, message: "Assistant vendor not found" });
 
       const finalAsstName = assistantName || asst.name;
 
       // 🛑 Prevent overlap
-      const existingBookings = await VendorInventory.find({ vendorId: assistantId });
+      const existingBookings = await VendorInventory.find({
+        vendorId: assistantId,
+      });
       const overlap = existingBookings.some((b) => {
-        if (!hasOverlap(eventStartDate, eventEndDate, b.eventStartDate, b.eventEndDate)) return false;
+        if (
+          !hasOverlap(
+            eventStartDate,
+            eventEndDate,
+            b.eventStartDate,
+            b.eventEndDate,
+          )
+        )
+          return false;
         return slot === "Full Day" || b.slot === "Full Day" || b.slot === slot;
       });
 
@@ -1074,12 +1167,16 @@ exports.assignAssistantToServiceUnit = async (req, res) => {
       service: service.toObject(),
     });
   } catch (err) {
-    console.error("assignAssistantToServiceUnit error:", err.message, err.stack);
-    return res.status(500).json({ success: false, message: "Internal server error" });
+    console.error(
+      "assignAssistantToServiceUnit error:",
+      err.message,
+      err.stack,
+    );
+    return res
+      .status(500)
+      .json({ success: false, message: "Internal server error" });
   }
 };
-
-
 
 exports.getBookedEventsByDate = async (req, res) => {
   try {
@@ -1103,7 +1200,7 @@ exports.getBookedEventsByDate = async (req, res) => {
     const filteredQuotations = quotations
       .map((quotation) => {
         const matchedPackages = quotation.packages.filter(
-          (pkg) => pkg.eventStartDate === date
+          (pkg) => pkg.eventStartDate === date,
         );
         return matchedPackages.length
           ? { ...quotation, packages: matchedPackages }
@@ -1139,7 +1236,7 @@ exports.getBookedEventsForToday = async (req, res) => {
     const filteredQuotations = quotations
       .map((quotation) => {
         const matchedPackages = quotation.packages.filter(
-          (pkg) => pkg.eventStartDate === today
+          (pkg) => pkg.eventStartDate === today,
         );
         return matchedPackages.length
           ? { ...quotation, packages: matchedPackages }
@@ -1205,42 +1302,193 @@ exports.getQuotationsByStatus = async (req, res) => {
   }
 };
 
-exports.getBookedAndCompletedQuotations = async (req, res) => {
-  try {
-    const { page = 1, limit = 10, search = "" } = req.query;
-    const skip = (parseInt(page) - 1) * parseInt(limit);
-    const searchRegex = new RegExp(search, "i");
+// exports.getBookedAndCompletedQuotations = async (req, res) => {
+//   try {
+//     const { page = 1, limit = 10, search = "" } = req.query;
+//     const skip = (parseInt(page) - 1) * parseInt(limit);
+//     const searchRegex = new RegExp(search, "i");
 
-    // Filter for Booked and Completed statuses
-    const filter = {
-      bookingStatus: { $in: ["Booked", "Completed"] },
-      ...(search && { quotationId: { $regex: searchRegex } }),
+//     // Filter for Booked and Completed statuses
+//     const filter = {
+//       bookingStatus: { $in: ["Booked", "Completed"] },
+//       ...(search && { quotationId: { $regex: searchRegex } }),
+//     };
+
+//     const [quotations, total] = await Promise.all([
+//       Quotation.find(filter)
+//         .populate({
+//           path: "leadId",
+//           select: "persons", // Only get persons from lead
+//         })
+//         .sort({ createdAt: -1 }) // Newest first
+//         .skip(skip)
+//         .limit(parseInt(limit))
+//         .lean(),
+//       Quotation.countDocuments(filter),
+//     ]);
+
+//     res.status(200).json({
+//       success: true,
+//       quotations,
+//       total,
+//       page: parseInt(page),
+//       limit: parseInt(limit),
+//       totalPages: Math.ceil(total / limit),
+//     });
+//   } catch (error) {
+//     console.error("Error fetching booked/completed quotations:", error);
+//     res.status(500).json({
+//       success: false,
+//       message: "Failed to fetch quotations",
+//       error: error.message,
+//     });
+//   }
+// };
+
+
+// small helper to escape regex special chars
+const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+exports.getAllBookings = async (req, res) => {
+  try {
+    const {
+      page = 1,
+      limit = 10,
+      searchType = "bookingId", // bookingId | venue | customerName | customerPhone | personName
+      searchValue = "",
+    } = req.query;
+
+    const pageNum = Math.max(1, Number(page));
+    const limitNum = Math.min(100, Math.max(1, Number(limit)));
+    const skip = (pageNum - 1) * limitNum;
+
+    const value = String(searchValue || "").trim();
+
+    // ✅ Base filter
+    const quotationFilter = {
+      bookingStatus: { $in: ["Booked", "Completed","Cancelled"] },
     };
 
+    // ✅ If user didn't type anything, return normal list (no search)
+    if (!value) {
+      const [quotations, total] = await Promise.all([
+        Quotation.find(quotationFilter)
+          .populate({ path: "leadId", select: "persons" })
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limitNum)
+          .lean(),
+        Quotation.countDocuments(quotationFilter),
+      ]);
+
+      return res.status(200).json({
+        success: true,
+        quotations,
+        total,
+        page: pageNum,
+        limit: limitNum,
+        totalPages: Math.ceil(total / limitNum),
+      });
+    }
+
+    const rx = new RegExp(escapeRegex(value), "i");
+
+    /* ----------------------------
+       SEARCH BY bookingId (Quotation.quotationId)
+    ---------------------------- */
+    if (searchType === "bookingId") {
+      quotationFilter.quotationId = rx;
+    }
+
+    /* ----------------------------
+       SEARCH BY venue (Quotation.packages.venueName / venueAddress)
+    ---------------------------- */
+    else if (searchType === "venue") {
+      quotationFilter.$or = [
+        { "packages.venueName": rx },
+        { "packages.venueAddress": rx },
+      ];
+    }
+
+    /* ----------------------------
+       SEARCH BY customerName / customerPhone (Lead.persons)
+    ---------------------------- */
+    else if (searchType === "customerName" || searchType === "customerPhone") {
+      const leadMatch =
+        searchType === "customerName"
+          ? { "persons.name": rx }
+          : { "persons.phoneNo": rx };
+
+      const leads = await Lead.find(leadMatch).select("_id").lean();
+      const leadIds = leads.map((l) => l._id);
+
+      // no lead match => no quotations
+      if (!leadIds.length) {
+        return res.status(200).json({
+          success: true,
+          quotations: [],
+          total: 0,
+          page: pageNum,
+          limit: limitNum,
+          totalPages: 0,
+        });
+      }
+
+      quotationFilter.leadId = { $in: leadIds };
+    }
+
+    /* ----------------------------
+       SEARCH BY personName (CollectedData.personName -> quotationId)
+    ---------------------------- */
+    else if (searchType === "personName") {
+      const collected = await CollectedData.find({ personName: rx })
+        .select("quotationId")
+        .lean();
+
+      const quotationIds = collected
+        .map((c) => c.quotationId)
+        .filter(Boolean);
+
+      if (!quotationIds.length) {
+        return res.status(200).json({
+          success: true,
+          quotations: [],
+          total: 0,
+          page: pageNum,
+          limit: limitNum,
+          totalPages: 0,
+        });
+      }
+
+      quotationFilter._id = { $in: quotationIds };
+    }
+
+    // Unknown searchType => fallback to bookingId
+    else {
+      quotationFilter.quotationId = rx;
+    }
+
     const [quotations, total] = await Promise.all([
-      Quotation.find(filter)
-        .populate({
-          path: "leadId",
-          select: "persons", // Only get persons from lead
-        })
-        .sort({ createdAt: -1 }) // Newest first
+      Quotation.find(quotationFilter)
+        .populate({ path: "leadId", select: "persons" })
+        .sort({ createdAt: -1 })
         .skip(skip)
-        .limit(parseInt(limit))
+        .limit(limitNum)
         .lean(),
-      Quotation.countDocuments(filter),
+      Quotation.countDocuments(quotationFilter),
     ]);
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       quotations,
       total,
-      page: parseInt(page),
-      limit: parseInt(limit),
-      totalPages: Math.ceil(total / limit),
+      page: pageNum,
+      limit: limitNum,
+      totalPages: Math.ceil(total / limitNum),
     });
   } catch (error) {
     console.error("Error fetching booked/completed quotations:", error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "Failed to fetch quotations",
       error: error.message,
@@ -1262,7 +1510,7 @@ exports.addClientInstruction = async (req, res) => {
     const updatedQuotation = await Quotation.findByIdAndUpdate(
       quotationId,
       { $push: { clientInstructions: instruction } },
-      { new: true }
+      { new: true },
     );
 
     if (!updatedQuotation) {
@@ -1292,7 +1540,7 @@ exports.deleteClientInstruction = async (req, res) => {
     const updatedQuotation = await Quotation.findByIdAndUpdate(
       quotationId,
       { $pull: { clientInstructions: instruction } },
-      { new: true }
+      { new: true },
     );
 
     if (!updatedQuotation) {
@@ -1332,7 +1580,7 @@ exports.getCompletedInstallments = async (req, res) => {
     const payments = completedQuotations.map((q) => {
       const firstPerson = q.leadId?.persons[0] || {};
       const completedInstallments = (q.installments || []).filter(
-        (inst) => inst.status === "Completed"
+        (inst) => inst.status === "Completed",
       );
 
       return {
@@ -1367,125 +1615,95 @@ exports.getCompletedInstallments = async (req, res) => {
   }
 };
 
-exports.recordPayment = async (req, res) => {
-  try {
-    const { quotationId, installmentId } = req.params;
-    const { paymentAmount, paymentMode, paymentDate, status } = req.body;
 
-    // Find the quotation
-    const quotation = await Quotation.findById(quotationId);
-    if (!quotation) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Quotation not found" });
-    }
-
-    // Find the specific installment
-    const installmentIndex = quotation.installments.findIndex(
-      (inst) => inst._id.toString() === installmentId
-    );
-
-    if (installmentIndex === -1) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Installment not found" });
-    }
-
-    const installment = quotation.installments[installmentIndex];
-
-    // Validate the payment amount
-    if (paymentAmount <= 0) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Payment amount must be positive" });
-    }
-
-    if (paymentAmount > installment.pendingAmount) {
-      return res.status(400).json({
-        success: false,
-        message: "Payment amount exceeds pending amount",
-      });
-    }
-
-    // Calculate new values
-    const newPaidAmount = (installment.paidAmount || 0) + paymentAmount;
-    const newPendingAmount = installment.pendingAmount - paymentAmount;
-    const newStatus =
-      newPendingAmount <= 0 ? "Completed" : status || "Partial Paid";
-
-    // Update the installment with all payment details
-    quotation.installments[installmentIndex] = {
-      ...installment.toObject(), // Keep all existing fields
-      paidAmount: newPaidAmount,
-      pendingAmount: newPendingAmount,
-      status: newStatus,
-      paymentMode: paymentMode || installment.paymentMode, // Use new mode or keep existing
-      paymentDate: paymentDate ? new Date(paymentDate) : new Date(), // Use provided date or current date
-      dueDate: installment.dueDate, // Preserve original due date
-    };
-
-    // Save the updated quotation
-    const updatedQuotation = await quotation.save();
-
-    return res.json({
-      success: true,
-      message: "Payment recorded successfully",
-      installment: updatedQuotation.installments[installmentIndex],
-      quotation: updatedQuotation,
-    });
-  } catch (err) {
-    console.error("Payment recording error:", err);
-    return res.status(500).json({
-      success: false,
-      message: "Failed to record payment",
-      error: err.message,
-    });
-  }
-};
-
-// PUT /api/quotations/:id/booking-status
-// exports.updateBookingStatus = async (req, res) => {
+// exports.recordPayment = async (req, res) => {
 //   try {
-//     const { id } = req.params;
-//     const { status, queryId } = req.body;
+//     const { quotationId, installmentId } = req.params;
+//     const { paymentAmount, paymentMode, paymentDate, status, paidTo } = req.body;
 
-//     // const finalStatus = status ?? "Completed";
-//     const finalStatus = status ?? "Booked";
-//     const allowed = ["NotBooked", "Booked", "Completed"];
-//     if (!allowed.includes(finalStatus)) {
+//     // ✅ paidTo is required
+//     if (!paidTo || !String(paidTo).trim()) {
 //       return res.status(400).json({
 //         success: false,
-//         message: `Invalid status. Allowed: ${allowed.join(", ")}`,
+//         message: "paidTo is required",
 //       });
 //     }
 
-//     const filter = mongoose.isValidObjectId(id)
-//       ? { _id: id }
-//       : { quotationId: id }; // use human id when not ObjectId
+//     // Find the quotation
+//     const quotation = await Quotation.findById(quotationId);
+//     if (!quotation) {
+//       return res
+//         .status(404)
+//         .json({ success: false, message: "Quotation not found" });
+//     }
 
-//     const updated = await Quotation.findOneAndUpdate(
-//       filter,
-//       { $set: { bookingStatus: finalStatus } },
-//       { new: true }
+//     // Find the specific installment
+//     const installmentIndex = quotation.installments.findIndex(
+//       (inst) => inst._id.toString() === installmentId
 //     );
 
-//     if (!updated) {
-//       return res.status(404).json({
+//     if (installmentIndex === -1) {
+//       return res
+//         .status(404)
+//         .json({ success: false, message: "Installment not found" });
+//     }
+
+//     const installment = quotation.installments[installmentIndex];
+
+//     // Validate the payment amount
+//     if (Number(paymentAmount) <= 0) {
+//       return res
+//         .status(400)
+//         .json({ success: false, message: "Payment amount must be positive" });
+//     }
+
+//     if (Number(paymentAmount) > Number(installment.pendingAmount || 0)) {
+//       return res.status(400).json({
 //         success: false,
-//         message: "Quotation not found",
+//         message: "Payment amount exceeds pending amount",
 //       });
 //     }
+
+//     // Calculate new values
+//     const newPaidAmount = (Number(installment.paidAmount) || 0) + Number(paymentAmount);
+//     const newPendingAmount = Number(installment.pendingAmount || 0) - Number(paymentAmount);
+//     const newStatus = newPendingAmount <= 0 ? "Completed" : status || "Partial Paid";
+
+//     // Update the installment with all payment details
+//     quotation.installments[installmentIndex] = {
+//       ...installment.toObject(),
+//       paidAmount: newPaidAmount,
+//       pendingAmount: newPendingAmount,
+//       status: newStatus,
+//       paymentMode: paymentMode || installment.paymentMode,
+//       paymentDate: paymentDate ? new Date(paymentDate) : new Date(),
+//       dueDate: installment.dueDate,
+//     };
+
+//     // Save the updated quotation
+//     const updatedQuotation = await quotation.save();
+
+//     // ✅ Store payment tracker entry (incremental payment)
+//     await PaymentTracker.create({
+//       quotationId: quotation._id,
+//       installmentId: installment._id,
+//       paidAmount: Number(paymentAmount),
+//       paymentMethod: paymentMode || installment.paymentMode || "Other",
+//       paymentDate: paymentDate ? new Date(paymentDate) : new Date(),
+//       paidTo: String(paidTo).trim(),
+//     });
 
 //     return res.json({
 //       success: true,
-//       message: "Booking status updated",
-//       quotation: updated,
+//       message: "Payment recorded successfully",
+//       installment: updatedQuotation.installments[installmentIndex],
+//       quotation: updatedQuotation,
 //     });
 //   } catch (err) {
-//     console.error("updateBookingStatus error:", err);
+//     console.error("Payment recording error:", err);
 //     return res.status(500).json({
 //       success: false,
-//       message: "Failed to update booking status",
+//       message: "Failed to record payment",
 //       error: err.message,
 //     });
 //   }
@@ -1497,7 +1715,8 @@ exports.updateBookingStatus = async (req, res) => {
     const { status, queryId } = req.body;
 
     const finalStatus = status ?? "Booked";
-    const allowed = ["NotBooked", "Booked", "Completed"];
+    const allowed = ["Not Booked", "Booked", "Completed", "Cancelled"];
+
     if (!allowed.includes(finalStatus)) {
       return res.status(400).json({
         success: false,
@@ -1505,10 +1724,22 @@ exports.updateBookingStatus = async (req, res) => {
       });
     }
 
-    // -------- Update Quotation --------
     const filter = mongoose.isValidObjectId(id)
       ? { _id: id }
-      : { quotationId: id }; // use human id when not ObjectId
+      : { quotationId: id };
+
+    // fetch first: if already cancelled, don't allow changing
+    const existing = await Quotation.findOne(filter).select("bookingStatus");
+    if (!existing) {
+      return res.status(404).json({ success: false, message: "Quotation not found" });
+    }
+
+    if (existing.bookingStatus === "Cancelled") {
+      return res.status(400).json({
+        success: false,
+        message: "Booking is Cancelled. You cannot modify or change status. Create a new booking.",
+      });
+    }
 
     const updatedQuotation = await Quotation.findOneAndUpdate(
       filter,
@@ -1516,14 +1747,6 @@ exports.updateBookingStatus = async (req, res) => {
       { new: true }
     );
 
-    if (!updatedQuotation) {
-      return res.status(404).json({
-        success: false,
-        message: "Quotation not found",
-      });
-    }
-
-    // -------- Update Query by queryId --------
     let updatedQuery = null;
     if (queryId) {
       updatedQuery = await Query.findOneAndUpdate(
@@ -1548,6 +1771,7 @@ exports.updateBookingStatus = async (req, res) => {
     });
   }
 };
+
 
 // In your backend routes file (e.g., routes/quotations.js)
 exports.getQuotaionByQueryId = async (req, res) => {
@@ -1652,6 +1876,134 @@ exports.countCompletedQuotations = async (req, res) => {
   }
 };
 
+exports.getPendingAlbumsCount = async (req, res) => {
+  try {
+    const result = await Quotation.aggregate([
+      // only documents having albums
+      { $match: { albums: { $exists: true, $ne: [] } } },
+
+      { $unwind: "$albums" },
+
+      // count albums not completed
+      {
+        $match: {
+          $or: [
+            { "albums.status": { $exists: false } },
+            { "albums.status": { $ne: "Completed" } },
+          ],
+        },
+      },
+
+      { $count: "count" },
+    ]);
+
+    const count = result?.[0]?.count || 0;
+
+    return res.status(200).json({
+      success: true,
+      count,
+    });
+  } catch (error) {
+    console.error("Error in getPendingAlbumsCount:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to get pending albums count",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+};
+
+
+// exports.updateCalculation = async (req, res) => {
+//   console.log("req.body calc", req.body);
+//   try {
+//     const { package: updatedPackage, ...totals } = req.body;
+
+//     // 1. Find the quotation
+//     const quotation = await Quotation.findById(req.params.id);
+//     if (!quotation) {
+//       return res
+//         .status(404)
+//         .json({ success: false, message: "Quotation not found" });
+//     }
+
+//     // 2. Update the specific package if provided
+//     if (updatedPackage && updatedPackage._id) {
+//       const packageIndex = quotation.packages.findIndex(
+//         (pkg) => pkg._id.toString() === updatedPackage._id,
+//       );
+
+//       if (packageIndex !== -1) {
+//         // Replace the package with the updated one
+//         quotation.packages[packageIndex] = updatedPackage;
+//       } else {
+//         // If package not found but has _id, it might be an error
+//         return res.status(400).json({
+//           success: false,
+//           message: "Package not found in quotation",
+//         });
+//       }
+//     }
+
+//     // 3. Update all the calculated totals
+//     quotation.totalPackageAmt = totals.totalPackageAmt;
+//     quotation.totalAlbumAmount = totals.totalAlbumAmount;
+//     quotation.discountValue = totals.discountValue;
+//     quotation.gstValue = totals.gstValue;
+//     quotation.totalAmount = totals.totalAmount;
+//     quotation.grandTotal = totals.grandTotal;
+//     quotation.totalMarginFinal = totals.totalMarginFinal;
+
+//     // 4. Update installments while preserving accountHolders
+//     if (totals.installments && Array.isArray(totals.installments)) {
+//       // Create a map of existing installments by _id for accountHolders preservation
+//       const existingInstallmentsMap = new Map();
+//       quotation.installments.forEach((inst) => {
+//         if (inst._id) {
+//           existingInstallmentsMap.set(inst._id.toString(), inst);
+//         }
+//       });
+
+//       // Update installments with financial data but preserve accountHolders
+//       quotation.installments = totals.installments.map((newInst) => {
+//         // For installments with _id, preserve accountHolders from existing installment
+//         if (newInst._id) {
+//           const existingInst = existingInstallmentsMap.get(
+//             newInst._id.toString(),
+//           );
+//           if (existingInst) {
+//             return {
+//               ...newInst,
+//               accountHolders: existingInst.accountHolders || [], // Preserve account holders
+//             };
+//           }
+//         }
+
+//         // For new installments or those without matching existing ones
+//         return {
+//           ...newInst,
+//           accountHolders: newInst.accountHolders || [], // Use provided or empty array
+//         };
+//       });
+//     }
+
+//     // 5. Save the updated quotation
+//     const updatedQuotation = await quotation.save();
+
+//     res.json({
+//       success: true,
+//       quotation: updatedQuotation,
+//     });
+//   } catch (err) {
+//     console.error("Error updating quotation:", err);
+//     res.status(500).json({
+//       success: false,
+//       message: "Failed to update quotation",
+//       error: err.message,
+//     });
+//   }
+// };
+
 exports.updateCalculation = async (req, res) => {
   console.log("req.body calc", req.body);
   try {
@@ -1668,14 +2020,12 @@ exports.updateCalculation = async (req, res) => {
     // 2. Update the specific package if provided
     if (updatedPackage && updatedPackage._id) {
       const packageIndex = quotation.packages.findIndex(
-        (pkg) => pkg._id.toString() === updatedPackage._id
+        (pkg) => pkg._id.toString() === updatedPackage._id,
       );
 
       if (packageIndex !== -1) {
-        // Replace the package with the updated one
         quotation.packages[packageIndex] = updatedPackage;
       } else {
-        // If package not found but has _id, it might be an error
         return res.status(400).json({
           success: false,
           message: "Package not found in quotation",
@@ -1683,9 +2033,14 @@ exports.updateCalculation = async (req, res) => {
       }
     }
 
-    // 3. Update all the calculated totals
+    // ✅ 3. Update all the calculated totals (now includes additional services total)
     quotation.totalPackageAmt = totals.totalPackageAmt;
     quotation.totalAlbumAmount = totals.totalAlbumAmount;
+
+    // ✅ NEW
+    quotation.totalAdditionalServiceAmount =
+      Number(totals.totalAdditionalServiceAmount) || 0;
+
     quotation.discountValue = totals.discountValue;
     quotation.gstValue = totals.gstValue;
     quotation.totalAmount = totals.totalAmount;
@@ -1694,7 +2049,6 @@ exports.updateCalculation = async (req, res) => {
 
     // 4. Update installments while preserving accountHolders
     if (totals.installments && Array.isArray(totals.installments)) {
-      // Create a map of existing installments by _id for accountHolders preservation
       const existingInstallmentsMap = new Map();
       quotation.installments.forEach((inst) => {
         if (inst._id) {
@@ -1702,30 +2056,27 @@ exports.updateCalculation = async (req, res) => {
         }
       });
 
-      // Update installments with financial data but preserve accountHolders
       quotation.installments = totals.installments.map((newInst) => {
-        // For installments with _id, preserve accountHolders from existing installment
         if (newInst._id) {
           const existingInst = existingInstallmentsMap.get(
-            newInst._id.toString()
+            newInst._id.toString(),
           );
           if (existingInst) {
             return {
               ...newInst,
-              accountHolders: existingInst.accountHolders || [], // Preserve account holders
+              accountHolders: existingInst.accountHolders || [],
             };
           }
         }
 
-        // For new installments or those without matching existing ones
         return {
           ...newInst,
-          accountHolders: newInst.accountHolders || [], // Use provided or empty array
+          accountHolders: newInst.accountHolders || [],
         };
       });
     }
 
-    // 5. Save the updated quotation
+    // 5. Save
     const updatedQuotation = await quotation.save();
 
     res.json({
@@ -1742,9 +2093,155 @@ exports.updateCalculation = async (req, res) => {
   }
 };
 
+// working original
+// exports.updateInstallmentStatus = async (req, res) => {
+//   try {
+//     const { quotationId, installmentId } = req.params;
+//     const {
+//       dueDate,
+//       paymentMode,
+//       paymentPercentage,
+//       paymentAmount,
+//       status,
+//       accountHolders,
+//       paidTo,
+
+//     } = req.body;
+
+//     const quotation = await Quotation.findById(quotationId);
+//     if (!quotation) {
+//       return res
+//         .status(404)
+//         .json({ success: false, message: "Quotation not found" });
+//     }
+
+//     if (installmentId !== "new") {
+//       const installment = quotation.installments.find(
+//         (inst) => String(inst._id) === String(installmentId),
+//       );
+//       if (!installment) {
+//         return res
+//           .status(404)
+//           .json({ success: false, message: "Installment not found" });
+//       }
+
+//       // Update fields from request
+//       if (dueDate !== undefined) installment.dueDate = dueDate;
+//       if (paymentMode !== undefined) installment.paymentMode = paymentMode;
+//       if (paymentPercentage !== undefined)
+//         installment.paymentPercentage = paymentPercentage;
+//       if (status !== undefined) installment.status = status;
+
+//       // ✅ Handle account holders - prevent duplicates
+//       if (accountHolders && Array.isArray(accountHolders)) {
+//         const newHolders = accountHolders.map((h) => ({ name: h.name }));
+
+//         // Merge with existing holders, avoiding duplicates
+//         const existingHolderNames = new Set(
+//           (installment.accountHolders || []).map((h) => h.name.toLowerCase()),
+//         );
+//         const uniqueNewHolders = newHolders.filter(
+//           (h) => !existingHolderNames.has(h.name.toLowerCase()),
+//         );
+
+//         installment.accountHolders = [
+//           ...(installment.accountHolders || []),
+//           ...uniqueNewHolders,
+//         ];
+//       }
+
+//       if (paymentAmount !== undefined) {
+//         installment.paymentAmount = paymentAmount;
+
+//         if (status === "Completed") {
+//           installment.paidAmount = paymentAmount;
+//           installment.pendingAmount = 0;
+//         } else if (status === "Partial Paid") {
+//           // Add the new payment to previous paidAmount
+//           const prevPaid = Number(installment.paidAmount) || 0;
+//           const newPaid = Number(req.body.paidAmount) || 0; // <-- frontend should send paidAmount as the amount being paid now
+//           installment.paidAmount = prevPaid + newPaid;
+//           installment.pendingAmount = Math.max(
+//             0,
+//             paymentAmount - installment.paidAmount,
+//           );
+//           // If fully paid, mark as completed
+//           if (installment.paidAmount >= paymentAmount) {
+//             installment.status = "Completed";
+//             installment.pendingAmount = 0;
+//           }
+//         } else {
+//           // Pending status
+//           installment.paidAmount = 0;
+//           installment.pendingAmount = paymentAmount;
+//         }
+//       }
+
+//       // business rule for first installment
+//       const firstInstallment = quotation.installments[0];
+//       if (
+//         firstInstallment &&
+//         String(firstInstallment._id) === String(installmentId) &&
+//         installment.status === "Completed"
+//       ) {
+//         quotation.bookingStatus = "Booked";
+//         if (quotation.queryId) {
+//           await Query.findOneAndUpdate(
+//             { _id: quotation.queryId },
+//             { status: "Booked" },
+//           );
+//         }
+//       }
+//     } else {
+//       // For new installment, use status from frontend or default to Pending
+//       const newStatus = status || "Pending";
+//       const planned = paymentAmount ?? 0;
+
+//       // ✅ Handle account holders for new installment - remove duplicates
+//       const accountHoldersData =
+//         accountHolders && Array.isArray(accountHolders)
+//           ? accountHolders.map((h) => ({ name: h.name }))
+//           : [];
+
+//       // Remove duplicate names
+//       const uniqueHolders = [];
+//       const seenNames = new Set();
+
+//       accountHoldersData.forEach((holder) => {
+//         if (!seenNames.has(holder.name.toLowerCase())) {
+//           seenNames.add(holder.name.toLowerCase());
+//           uniqueHolders.push(holder);
+//         }
+//       });
+
+//       quotation.installments.push({
+//         dueDate,
+//         paymentMode,
+//         paymentPercentage,
+//         paymentAmount: planned,
+//         paidAmount: newStatus === "Completed" ? planned : 0,
+//         pendingAmount: newStatus === "Completed" ? 0 : planned,
+//         status: newStatus,
+//         accountHolders: uniqueHolders, // ✅ Add unique account holders
+//       });
+//     }
+
+//     await quotation.save();
+//     return res.status(200).json({ success: true, quotation });
+//   } catch (error) {
+//     console.error("Error updating/creating installment:", error);
+//     return res.status(500).json({
+//       success: false,
+//       message: "Failed to update/create installment",
+//       error: error.message,
+//     });
+//   }
+// };
+
 exports.updateInstallmentStatus = async (req, res) => {
   try {
     const { quotationId, installmentId } = req.params;
+
     const {
       dueDate,
       paymentMode,
@@ -1752,6 +2249,7 @@ exports.updateInstallmentStatus = async (req, res) => {
       paymentAmount,
       status,
       accountHolders,
+      paidTo,
     } = req.body;
 
     const quotation = await Quotation.findById(quotationId);
@@ -1761,33 +2259,63 @@ exports.updateInstallmentStatus = async (req, res) => {
         .json({ success: false, message: "Quotation not found" });
     }
 
+    // ✅ helper: accept only valid date input (prevents "" overwrite)
+    const isValidDueDate = (v) => {
+      if (v === undefined || v === null) return false;
+      const s = String(v).trim();
+      if (!s) return false; // block empty string
+
+      // allow DD-MM-YYYY (your format) OR YYYY-MM-DD
+      const isDDMMYYYY = /^\d{2}-\d{2}-\d{4}$/.test(s);
+      const isYYYYMMDD = /^\d{4}-\d{2}-\d{2}$/.test(s);
+
+      return isDDMMYYYY || isYYYYMMDD;
+    };
+
+    // ✅ We'll create tracker only when there is a payment action
+    const shouldCreateTracker =
+      paymentAmount !== undefined &&
+      paymentAmount !== null &&
+      String(paymentAmount).trim() !== "" &&
+      Number(paymentAmount) > 0 &&
+      paidTo &&
+      String(paidTo).trim() &&
+      paymentMode &&
+      String(paymentMode).trim() &&
+      (status === "Completed" || status === "Partial Paid");
+
     if (installmentId !== "new") {
       const installment = quotation.installments.find(
-        (inst) => String(inst._id) === String(installmentId)
+        (inst) => String(inst._id) === String(installmentId),
       );
+
       if (!installment) {
         return res
           .status(404)
           .json({ success: false, message: "Installment not found" });
       }
 
-      // Update fields from request
-      if (dueDate !== undefined) installment.dueDate = dueDate;
+      // ✅ FIX: Update dueDate only if valid (prevents overwriting with "")
+      if (isValidDueDate(dueDate)) installment.dueDate = String(dueDate).trim();
+
+      // rest same
       if (paymentMode !== undefined) installment.paymentMode = paymentMode;
       if (paymentPercentage !== undefined)
         installment.paymentPercentage = paymentPercentage;
       if (status !== undefined) installment.status = status;
 
-      // ✅ Handle account holders - prevent duplicates
+      // ✅ account holders (same)
       if (accountHolders && Array.isArray(accountHolders)) {
         const newHolders = accountHolders.map((h) => ({ name: h.name }));
 
-        // Merge with existing holders, avoiding duplicates
         const existingHolderNames = new Set(
-          (installment.accountHolders || []).map((h) => h.name.toLowerCase())
+          (installment.accountHolders || []).map((h) =>
+            String(h.name || "").toLowerCase(),
+          ),
         );
+
         const uniqueNewHolders = newHolders.filter(
-          (h) => !existingHolderNames.has(h.name.toLowerCase())
+          (h) => !existingHolderNames.has(String(h.name || "").toLowerCase()),
         );
 
         installment.accountHolders = [
@@ -1796,6 +2324,7 @@ exports.updateInstallmentStatus = async (req, res) => {
         ];
       }
 
+      // ✅ your math (unchanged)
       if (paymentAmount !== undefined) {
         installment.paymentAmount = paymentAmount;
 
@@ -1803,27 +2332,44 @@ exports.updateInstallmentStatus = async (req, res) => {
           installment.paidAmount = paymentAmount;
           installment.pendingAmount = 0;
         } else if (status === "Partial Paid") {
-          // Add the new payment to previous paidAmount
           const prevPaid = Number(installment.paidAmount) || 0;
-          const newPaid = Number(req.body.paidAmount) || 0; // <-- frontend should send paidAmount as the amount being paid now
+          const newPaid = Number(req.body.paidAmount) || 0;
+
           installment.paidAmount = prevPaid + newPaid;
           installment.pendingAmount = Math.max(
             0,
-            paymentAmount - installment.paidAmount
+            paymentAmount - installment.paidAmount,
           );
-          // If fully paid, mark as completed
+
           if (installment.paidAmount >= paymentAmount) {
             installment.status = "Completed";
             installment.pendingAmount = 0;
           }
         } else {
-          // Pending status
           installment.paidAmount = 0;
           installment.pendingAmount = paymentAmount;
         }
       }
 
-      // business rule for first installment
+      // ✅ TRACKER INSERT (same)
+      if (shouldCreateTracker) {
+        try {
+          await PaymentTracker.create({
+            quotationId: quotation._id,
+            installmentId: installment._id,
+            paidAmount: Number(paymentAmount) || 0,
+            paymentMethod: String(paymentMode).trim(),
+            // for tracker we store a Date, so keep as-is
+            // (if you send DD-MM-YYYY here, JS Date() can fail. Better to send ISO from frontend.)
+            paymentDate: dueDate ? new Date(dueDate) : new Date(),
+            paidTo: String(paidTo).trim(),
+          });
+        } catch (e) {
+          console.log("PaymentTracker create failed:", e?.message || e);
+        }
+      }
+
+      // business rule (same)
       const firstInstallment = quotation.installments[0];
       if (
         firstInstallment &&
@@ -1834,42 +2380,70 @@ exports.updateInstallmentStatus = async (req, res) => {
         if (quotation.queryId) {
           await Query.findOneAndUpdate(
             { _id: quotation.queryId },
-            { status: "Booked" }
+            { status: "Booked" },
           );
         }
       }
     } else {
-      // For new installment, use status from frontend or default to Pending
+      // new installment (same, but also protect dueDate)
       const newStatus = status || "Pending";
       const planned = paymentAmount ?? 0;
 
-      // ✅ Handle account holders for new installment - remove duplicates
       const accountHoldersData =
         accountHolders && Array.isArray(accountHolders)
           ? accountHolders.map((h) => ({ name: h.name }))
           : [];
 
-      // Remove duplicate names
       const uniqueHolders = [];
       const seenNames = new Set();
 
       accountHoldersData.forEach((holder) => {
-        if (!seenNames.has(holder.name.toLowerCase())) {
-          seenNames.add(holder.name.toLowerCase());
+        const nm = String(holder?.name || "").toLowerCase();
+        if (nm && !seenNames.has(nm)) {
+          seenNames.add(nm);
           uniqueHolders.push(holder);
         }
       });
 
-      quotation.installments.push({
-        dueDate,
+      const newInst = {
+        dueDate: isValidDueDate(dueDate) ? String(dueDate).trim() : "", // ✅ FIX
         paymentMode,
         paymentPercentage,
         paymentAmount: planned,
         paidAmount: newStatus === "Completed" ? planned : 0,
         pendingAmount: newStatus === "Completed" ? 0 : planned,
         status: newStatus,
-        accountHolders: uniqueHolders, // ✅ Add unique account holders
-      });
+        accountHolders: uniqueHolders,
+      };
+
+      quotation.installments.push(newInst);
+
+      const createdInst =
+        quotation.installments[quotation.installments.length - 1];
+
+      if (
+        planned !== undefined &&
+        planned !== null &&
+        Number(planned) > 0 &&
+        paidTo &&
+        String(paidTo).trim() &&
+        paymentMode &&
+        String(paymentMode).trim() &&
+        (newStatus === "Completed" || newStatus === "Partial Paid")
+      ) {
+        try {
+          await PaymentTracker.create({
+            quotationId: quotation._id,
+            installmentId: createdInst._id,
+            paidAmount: Number(planned) || 0,
+            paymentMethod: String(paymentMode).trim(),
+            paymentDate: dueDate ? new Date(dueDate) : new Date(),
+            paidTo: String(paidTo).trim(),
+          });
+        } catch (e) {
+          console.log("PaymentTracker create failed (new):", e?.message || e);
+        }
+      }
     }
 
     await quotation.save();
@@ -1890,7 +2464,7 @@ exports.updateInstallmentFirstPayment = async (req, res) => {
 
   try {
     const { quotationId, installmentId } = req.params;
-    const { dueDate, paymentMode, paymentAmount, status, accountHolders } =
+    const { dueDate, paymentMode, paymentAmount, status, accountHolders, paidTo } =
       req.body;
 
     const allowed = ["Pending", "Partial Paid", "Completed"];
@@ -1962,6 +2536,32 @@ exports.updateInstallmentFirstPayment = async (req, res) => {
       );
     }
 
+    // ✅ IMPORTANT: Store payment tracker entry
+    if (paidNow > 0) {
+      if (!paidTo || !String(paidTo).trim()) {
+        await session.abortTransaction();
+        session.endSession();
+        return res.status(400).json({
+          success: false,
+          message: "paidTo is required to store payment tracking",
+        });
+      }
+
+      await PaymentTracker.create(
+        [
+          {
+            quotationId: doc._id,
+            installmentId: inst._id,
+            paidAmount: paidNow,
+            paymentMethod: paymentMode || inst.paymentMode || "Other",
+            paymentDate: dueDate ? new Date(dueDate) : new Date(),
+            paidTo: String(paidTo).trim(),
+          },
+        ],
+        { session }
+      );
+    }
+
     await session.commitTransaction();
     session.endSession();
 
@@ -1988,7 +2588,6 @@ exports.updateInstallmentFirstPayment = async (req, res) => {
   }
 };
 
-// Update WhatsApp group name or Note
 exports.updateGroupOrNote = async (req, res) => {
   try {
     const { id } = req.params;
@@ -1997,17 +2596,25 @@ exports.updateGroupOrNote = async (req, res) => {
     if (!whatsappGroupName && !note) {
       return res
         .status(400)
-        .json({ success: false, message: "Either group name or note is required" });
+        .json({
+          success: false,
+          message: "Either group name or note is required",
+        });
     }
 
     const updated = await Quotation.findByIdAndUpdate(
       id,
-      { ...(whatsappGroupName && { whatsappGroupName }), ...(note && { quoteNote: note }) },
-      { new: true }
+      {
+        ...(whatsappGroupName && { whatsappGroupName }),
+        ...(note && { quoteNote: note }),
+      },
+      { new: true },
     );
 
     if (!updated) {
-      return res.status(404).json({ success: false, message: "Quotation not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Quotation not found" });
     }
 
     res.json({ success: true, quotation: updated });
@@ -2015,6 +2622,338 @@ exports.updateGroupOrNote = async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 };
+
+
+exports.updateAdditionalServices = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { additionalServiceIds } = req.body;
+
+    if (!id) {
+      return res.status(400).json({ success: false, message: "Quotation id is required" });
+    }
+
+    const ids = Array.isArray(additionalServiceIds) ? additionalServiceIds : [];
+
+    // Fetch quotation
+    const quotation = await Quotation.findById(id);
+    if (!quotation) {
+      return res.status(404).json({ success: false, message: "Quotation not found" });
+    }
+
+    // If user cleared all selections
+    if (ids.length === 0) {
+      quotation.additionalServices = [];
+      quotation.totalAdditionalServiceAmount = 0;
+
+      await quotation.save();
+
+      return res.json({
+        success: true,
+        quotation,
+        message: "Additional services cleared",
+      });
+    }
+
+    // Fetch services
+    const services = await AdditionalService.find({ _id: { $in: ids } });
+
+    // Keep same order as ids (optional but nicer)
+    const map = new Map(services.map((s) => [String(s._id), s]));
+    const selected = ids
+      .map((sid) => map.get(String(sid)))
+      .filter(Boolean);
+
+    const payload = selected.map((s) => ({
+      serviceId: s._id,
+      name: s.name,
+      description: s.description || "",
+      price: Number(s.price) || 0,
+    }));
+
+    const total = payload.reduce((sum, s) => sum + (Number(s.price) || 0), 0);
+
+    quotation.additionalServices = payload;
+    quotation.totalAdditionalServiceAmount = total;
+
+    await quotation.save();
+
+    return res.json({
+      success: true,
+      quotation,
+      message: "Additional services updated",
+    });
+  } catch (error) {
+    console.error("updateAdditionalServices error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to update additional services",
+    });
+  }
+};
+
+// controllers/quotation.controller.js
+exports.deleteAdditionalServicebyId = async (req, res) => {
+  try {
+    const { quotationId, serviceId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(quotationId)) {
+      return res.status(400).json({ success: false, message: "Invalid quotationId" });
+    }
+    if (!mongoose.Types.ObjectId.isValid(serviceId)) {
+      return res.status(400).json({ success: false, message: "Invalid serviceId" });
+    }
+
+    const updated = await Quotation.findByIdAndUpdate(
+      quotationId,
+      { $pull: { additionalServices: { serviceId: new mongoose.Types.ObjectId(serviceId) } } },
+      { new: true }
+    );
+
+    if (!updated) {
+      return res.status(404).json({ success: false, message: "Quotation not found" });
+    }
+
+    return res.json({
+      success: true,
+      quotation: updated,
+      additionalServices: updated.additionalServices,
+    });
+  } catch (err) {
+    console.error("deleteOneAdditionalService error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to remove additional service",
+      error: err.message,
+    });
+  }
+};
+
+// -------- core stage: marks a service as "unassigned" --------
+// Unassigned if:
+// - assignedVendors missing OR []
+// - OR any entry is null
+// - OR any entry has vendorId missing/null
+const addUnassignedFlagStage = {
+  $addFields: {
+    _assignedVendors: { $ifNull: ["$packages.services.assignedVendors", []] },
+  },
+};
+
+const addIsUnassignedStage = {
+  $addFields: {
+    _isUnassignedService: {
+      $or: [
+        { $eq: [{ $size: "$_assignedVendors" }, 0] },
+        {
+          $gt: [
+            {
+              $size: {
+                $filter: {
+                  input: "$_assignedVendors",
+                  as: "v",
+                  cond: {
+                    $or: [
+                      { $eq: ["$$v", null] },
+                      { $eq: [{ $ifNull: ["$$v.vendorId", null] }, null] },
+                    ],
+                  },
+                },
+              },
+            },
+            0,
+          ],
+        },
+      ],
+    },
+  },
+};
+
+// -------- match builder (optional filters) --------
+function buildMatch(req) {
+  const match = { bookingStatus: "Booked" };
+
+  // Optional: date range filter on quotation createdAt
+  const createdAt = {};
+  if (req.query.fromDate) {
+    const d = new Date(req.query.fromDate);
+    if (!Number.isNaN(d.getTime())) createdAt.$gte = d;
+  }
+  if (req.query.toDate) {
+    const d = new Date(req.query.toDate);
+    if (!Number.isNaN(d.getTime())) createdAt.$lte = d;
+  }
+  if (Object.keys(createdAt).length) match.createdAt = createdAt;
+
+  // Optional: search (quotationId / quoteTitle / whatsappGroupName)
+  const search = String(req.query.search || "").trim();
+  if (search) {
+    match.$or = [
+      { quotationId: { $regex: search, $options: "i" } },
+      { quoteTitle: { $regex: search, $options: "i" } },
+      { whatsappGroupName: { $regex: search, $options: "i" } },
+    ];
+  }
+
+  return match;
+}
+
+// ============================================================
+// 1) LIST: quotations but ONLY unassigned services included
+// GET /api/quotations/booked/unassigned-services?page=1&limit=10&search=&fromDate=&toDate=
+// ============================================================
+exports.getBookedQuotationsWithOnlyUnassignedServices = async (req, res) => {
+  try {
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.max(1, Math.min(200, Number(req.query.limit) || 10));
+    const skip = (page - 1) * limit;
+
+    const match = buildMatch(req);
+
+    const pipeline = [
+      { $match: match },
+
+      // flatten to service level
+      { $unwind: "$packages" },
+      { $unwind: "$packages.services" },
+
+      addUnassignedFlagStage,
+      addIsUnassignedStage,
+
+      // keep only unassigned services
+      { $match: { _isUnassignedService: true } },
+
+      // group back per quotation with ONLY unassigned services
+      {
+        $group: {
+          _id: "$_id",
+          quotationId: { $first: "$quotationId" },
+          quoteTitle: { $first: "$quoteTitle" },
+          createdAt: { $first: "$createdAt" },
+          updatedAt: { $first: "$updatedAt" },
+          bookingStatus: { $first: "$bookingStatus" },
+          finalized: { $first: "$finalized" },
+          totalAmount: { $first: "$totalAmount" },
+          totalPackageAmt: { $first: "$totalPackageAmt" },
+          marginAmount: { $first: "$marginAmount" },
+
+          // ONLY missing services
+          unassignedServices: {
+            $push: {
+              packageId: "$packages._id",
+              categoryName: "$packages.categoryName",
+              eventStartDate: "$packages.eventStartDate",
+              eventEndDate: "$packages.eventEndDate",
+              slot: "$packages.slot",
+              venueName: "$packages.venueName",
+              venueAddress: "$packages.venueAddress",
+
+              serviceId: "$packages.services._id",
+              serviceName: "$packages.services.serviceName",
+              qty: "$packages.services.qty",
+            },
+          },
+        },
+      },
+
+      { $addFields: { unassignedCount: { $size: "$unassignedServices" } } },
+      { $sort: { createdAt: -1 } },
+
+      // paginate + total distinct quotations
+      {
+        $facet: {
+          meta: [{ $count: "total" }],
+          data: [{ $skip: skip }, { $limit: limit }],
+        },
+      },
+      {
+        $addFields: {
+          total: { $ifNull: [{ $arrayElemAt: ["$meta.total", 0] }, 0] },
+          page,
+          limit,
+          totalPages: {
+            $cond: [
+              { $gt: [{ $ifNull: [{ $arrayElemAt: ["$meta.total", 0] }, 0] }, 0] },
+              {
+                $ceil: {
+                  $divide: [
+                    { $ifNull: [{ $arrayElemAt: ["$meta.total", 0] }, 0] },
+                    limit,
+                  ],
+                },
+              },
+              0,
+            ],
+          },
+        },
+      },
+      { $project: { meta: 0 } },
+    ];
+
+    const agg = await Quotation.aggregate(pipeline);
+
+    const out = agg?.[0] || {
+      total: 0,
+      page,
+      limit,
+      totalPages: 0,
+      data: [],
+    };
+
+    return res.status(200).json({
+      success: true,
+      message: "Booked quotations with ONLY unassigned services",
+      ...out,
+    });
+  } catch (e) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch booked quotations with unassigned services",
+      error: e?.message || String(e),
+    });
+  }
+};
+
+// ============================================================
+// 2) COUNT: total booked quotations that have at least one unassigned service
+// GET /api/quotations/booked/unassigned-services/count?search=&fromDate=&toDate=
+// ============================================================
+exports.countBookedQuotationsWithUnassignedServices = async (req, res) => {
+  try {
+    const match = buildMatch(req);
+
+    const pipeline = [
+      { $match: match },
+      { $unwind: "$packages" },
+      { $unwind: "$packages.services" },
+
+      addUnassignedFlagStage,
+      addIsUnassignedStage,
+
+      { $match: { _isUnassignedService: true } },
+
+      // count DISTINCT quotations
+      { $group: { _id: "$_id" } },
+      { $count: "total" },
+    ];
+
+    const agg = await Quotation.aggregate(pipeline);
+    const total = agg?.[0]?.total || 0;
+
+    return res.status(200).json({
+      success: true,
+      total,
+    });
+  } catch (e) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to count booked quotations with unassigned services",
+      error: e?.message || String(e),
+    });
+  }
+};
+
+
 
 // ➤ Yearly Client Payments
 exports.getYearlyClientPayments = async (req, res) => {
@@ -2035,6 +2974,3 @@ exports.getYearlyVendorPayments = async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 };
-
-
-

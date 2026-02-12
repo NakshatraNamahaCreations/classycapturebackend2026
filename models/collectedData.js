@@ -164,4 +164,7 @@ CollectedDataSchema.pre("save", function (next) {
   next();
 });
 
+// add in schema file
+CollectedDataSchema.index({ "serviceUnits.sortingStatus": 1, updatedAt: -1 });
+
 module.exports = mongoose.model("CollectedData", CollectedDataSchema);

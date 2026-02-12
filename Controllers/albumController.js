@@ -182,12 +182,13 @@ exports.updateAlbumStatus = async (req, res) => {
 
     const VALID = new Set([
       "Awaiting Customer Selection",
-      "Photos To Be Selected By Us",
-      "Selection Ready",
-      "In Progress",
-      "Awaiting Printing Approval",
-      "Sent for Printing",
-      "Completed",
+        "Photos To Be Selected By Us",
+        "Selection Ready",
+        "Album Photo Correction",
+        "In Progress",
+        "Awaiting Printing Approval",
+        "Sent for Printing",
+        "Completed",
     ]);
 
     if (!status || !VALID.has(status)) {
