@@ -1,4 +1,4 @@
-import mongoose from "mongoose";
+const mongoose = require("mongoose");
 
 const otherExpenseSchema = new mongoose.Schema(
   {
@@ -24,4 +24,12 @@ const otherExpenseSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-export default mongoose.model("OtherExpense", otherExpenseSchema);
+// ✅ indexes for performance
+otherExpenseSchema.index({ paymentDate: -1 });
+otherExpenseSchema.index({ paidTo: 1, paymentDate: -1 });
+
+const OtherExpense = mongoose.model("OtherExpense", otherExpenseSchema);
+module.exports = OtherExpense;
+
+
+

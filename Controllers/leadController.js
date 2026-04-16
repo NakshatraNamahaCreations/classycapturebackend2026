@@ -245,7 +245,7 @@ exports.getAllLeads = async (req, res) => {
 
     const total = await Lead.countDocuments(filter);
     const leads = await Lead.find(filter)
-      .populate("queries")
+      // .populate("queries")
       .sort({ createdAt: -1 }) // 👈 Sort by creation date, newest first
       .skip(skip)
       .limit(limit)

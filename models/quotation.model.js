@@ -771,5 +771,10 @@ QuotationSchema.index(
   { name: "quotation_text_search" }
 );
 
+QuotationSchema.index({ bookingStatus: 1 });
+QuotationSchema.index({ "packages.eventStartDate": 1 }); // string index still helps
+QuotationSchema.index({ "packages.services.assignedVendors.paymentStatus": 1 });
+QuotationSchema.index({ "packages.services.assignedVendors.vendorId": 1 });
+
 
 module.exports = mongoose.model("Quotation", QuotationSchema);
