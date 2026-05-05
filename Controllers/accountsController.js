@@ -104,6 +104,53 @@ exports.loginAdmin = async (req, res) => {
 };
 
 
+// Update an admin (any subset of fields; password rehashes via pre-save hook)
+exports.updateAdmin = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const admin = await Admin.findById(id);
+    if (!admin) return res.status(404).json({ success: false, message: "Admin not found" });
+
+    const { name, email, username, phonenumber, password, role, status } = req.body;
+
+    if (email && email.toLowerCase() !== admin.email) {
+      const exists = await Admin.findOne({ email: email.toLowerCase(), _id: { $ne: id } });
+      if (exists) return res.status(400).json({ success: false, message: "Email already in use" });
+      admin.email = email;
+    }
+    if (username && username !== admin.username) {
+      const exists = await Admin.findOne({ username, _id: { $ne: id } });
+      if (exists) return res.status(400).json({ success: false, message: "Username already in use" });
+      admin.username = username;
+    }
+    if (name !== undefined) admin.name = name;
+    if (phonenumber !== undefined) admin.phonenumber = phonenumber;
+    if (role !== undefined) admin.role = role;
+    if (status !== undefined) admin.status = status;
+    if (password) admin.password = password; // pre-save hook hashes
+
+    await admin.save();
+
+    res.json({
+      success: true,
+      data: {
+        id: admin._id,
+        name: admin.name,
+        email: admin.email,
+        username: admin.username,
+        phonenumber: admin.phonenumber,
+        role: admin.role,
+        status: admin.status,
+      },
+      message: "Admin updated successfully",
+    });
+  } catch (error) {
+    console.error("Update Admin Error:", error);
+    res.status(500).json({ success: false, message: error.message || "Server Error while updating admin" });
+  }
+};
+
+
 // ✅ Fetch all admins
 exports.getAllAdmins = async (req, res) => {
   try {
