@@ -64,23 +64,35 @@ app.options("*", (req, res) => {
   res.sendStatus(200);
 });
 
-const connectDB = async () => {
-  try {
-    await mongoose.connect(process.env.MONGO_URI, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-      serverSelectionTimeoutMS: 10000,
-      socketTimeoutMS: 45000,
-      maxPoolSize: 10,
-    });
-    console.log("MongoDB Connected Successfully!");
-  } catch (error) {
-    console.error("MongoDB Connection Error:", error.message);
-    process.exit(1);
+// Serverless-safe connection: cache the promise so warm invocations reuse the
+// same connection, and never process.exit() — that crashes the function.
+let connectionPromise = null;
+
+const connectDB = () => {
+  if (mongoose.connection.readyState === 1) return Promise.resolve();
+
+  if (!connectionPromise) {
+    connectionPromise = mongoose
+      .connect(process.env.MONGO_URI, {
+        serverSelectionTimeoutMS: 10000,
+        socketTimeoutMS: 45000,
+        maxPoolSize: 10,
+      })
+      .then(() => {
+        console.log("MongoDB Connected Successfully!");
+      })
+      .catch((error) => {
+        connectionPromise = null; // let the next request retry
+        throw error;
+      });
   }
+
+  return connectionPromise;
 };
 
-connectDB();
+connectDB().catch((error) => {
+  console.error("MongoDB Connection Error:", error.message);
+});
 
 mongoose.connection.on("connected", () => {
   console.log("🔗 Mongoose connected to the database.");
@@ -96,6 +108,25 @@ app.use(express.json({ limit: "10mb" }));
 
 // Serve static files
 app.use("/uploads", express.static(path.join(__dirname, "Uploads")));
+
+app.get("/", (req, res) => {
+  res.json({
+    status: "ok",
+    db: mongoose.connection.readyState === 1 ? "connected" : "disconnected",
+  });
+});
+
+// Make sure the DB is up before any /api route runs (cold starts on serverless
+// begin handling requests before the initial connect resolves).
+app.use("/api", async (req, res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (error) {
+    console.error("MongoDB Connection Error:", error.message);
+    res.status(503).json({ error: "Database unavailable", detail: error.message });
+  }
+});
 
 app.use("/api/category", categoryRoutes);
 app.use("/api/service", serviceRoutes);
@@ -137,7 +168,13 @@ app.use((req, res, next) => {
   res.status(404).json({ error: "Route not found" });
 });
 
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-});
+// On Vercel the platform invokes the exported handler; binding a port there
+// makes the function crash with FUNCTION_INVOCATION_FAILED.
+if (!process.env.VERCEL) {
+  const PORT = process.env.PORT || 5000;
+  app.listen(PORT, () => {
+    console.log(`🚀 Server running on port ${PORT}`);
+  });
+}
+
+module.exports = app;

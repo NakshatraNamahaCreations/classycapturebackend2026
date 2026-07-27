@@ -13,6 +13,12 @@ dist-ssr
 .env
 *.local
 
+.vercel
+
+# Local copy extracted from ccbackend.zip — not part of the deployment
+ccbackend/
+ccbackend.zip
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
