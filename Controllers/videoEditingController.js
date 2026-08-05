@@ -1,6 +1,53 @@
 const VideoEditingTask = require("../models/videoEditingTask");
 const CollectedData = require("../models/collectedData");
 
+// Same pending-work pipeline used by the count/list endpoints: service units
+// that have videos but no video-editing task yet, merged to one row per
+// package + service.
+const pendingVideoEditingStages = [
+  { $unwind: "$serviceUnits" },
+  { $match: { "serviceUnits.noOfVideos": { $gt: 0 } } },
+  {
+    $group: {
+      _id: {
+        quotationId: "$quotationId",
+        collectedDataId: "$_id",
+        packageName: "$serviceUnits.packageName",
+        serviceName: "$serviceUnits.serviceName",
+      },
+    },
+  },
+  {
+    $lookup: {
+      from: "videoeditingtasks",
+      let: {
+        qid: "$_id.quotationId",
+        cdid: "$_id.collectedDataId",
+        pkg: "$_id.packageName",
+        srv: "$_id.serviceName",
+      },
+      pipeline: [
+        {
+          $match: {
+            $expr: {
+              $and: [
+                { $eq: ["$quotationId", "$$qid"] },
+                { $eq: ["$collectedDataId", "$$cdid"] },
+                { $eq: ["$packageName", "$$pkg"] },
+                { $eq: ["$serviceName", "$$srv"] },
+              ],
+            },
+          },
+        },
+        { $project: { _id: 1 } },
+        { $limit: 1 },
+      ],
+      as: "_videoTask",
+    },
+  },
+  { $match: { $expr: { $eq: [{ $size: "$_videoTask" }, 0] } } },
+];
+
 // 🎥 Assign Video Editing Task
 exports.assignVideoEditingTask = async (req, res) => {
   try {
@@ -117,6 +164,67 @@ exports.getVideoEditingTasksByQuotation = async (req, res) => {
 };
 
 // -------------------- VIDEO: COUNT pending services to assign --------------------
+// Pending video edits split by kind of video, for the dashboard tiles.
+// "traditional"  -> Traditional Videographer
+// "cinematic"    -> Candid Cinematographer / cinematic work
+// "other"        -> Drone, Live Streaming, anything else
+exports.countPendingVideoEditingByCategory = async (req, res) => {
+  try {
+    const agg = await CollectedData.aggregate([
+      ...pendingVideoEditingStages,
+      {
+        $group: {
+          _id: {
+            $switch: {
+              branches: [
+                {
+                  case: {
+                    $regexMatch: {
+                      input: { $ifNull: ["$_id.serviceName", ""] },
+                      regex: "traditional",
+                      options: "i",
+                    },
+                  },
+                  then: "traditional",
+                },
+                {
+                  case: {
+                    $regexMatch: {
+                      input: { $ifNull: ["$_id.serviceName", ""] },
+                      regex: "cinemat|candid",
+                      options: "i",
+                    },
+                  },
+                  then: "cinematic",
+                },
+              ],
+              default: "other",
+            },
+          },
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    const data = { traditional: 0, cinematic: 0, other: 0 };
+    agg.forEach((row) => {
+      if (row._id in data) data[row._id] = row.count;
+    });
+
+    return res.status(200).json({
+      success: true,
+      data,
+      total: data.traditional + data.cinematic + data.other,
+    });
+  } catch (e) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to count pending video editing by category",
+      error: e?.message || String(e),
+    });
+  }
+};
+
 exports.countPendingVideoEditingAssignments = async (req, res) => {
   try {
     const agg = await CollectedData.aggregate([

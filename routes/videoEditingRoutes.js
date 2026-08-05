@@ -7,7 +7,8 @@ const {
   getVideoEditingTaskById,
   getVideoEditingTasksByQuotation,
   countPendingVideoEditingAssignments,
-  listPendingVideoEditingAssignments
+  listPendingVideoEditingAssignments,
+  countPendingVideoEditingByCategory
 } = require("../Controllers/videoEditingController");
 
 // Assign new video editing task
@@ -20,6 +21,7 @@ router.post("/:id/submit", submitVideoEditingTask);
 router.get("/", getAllVideoEditingTasks);
 // VIDEO
 router.get("/pending/count", countPendingVideoEditingAssignments);
+router.get("/pending/count-by-category", countPendingVideoEditingByCategory);
 router.get("/pending", listPendingVideoEditingAssignments);
 
 // Fetch tasks by quotation
