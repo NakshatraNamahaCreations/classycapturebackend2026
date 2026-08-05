@@ -4,17 +4,86 @@ const VendorInventory = require("../models/vendorInventory");
 const dayjs = require("dayjs");
 const Quotation = require("../models/quotation.model");
 
+// "bankDetails.branch" -> "Branch", "expertiseLevel" -> "Expertise Level"
+const fieldLabel = (path) => {
+  const last = String(path).split(".").pop();
+  return last
+    .replace(/([A-Z])/g, " $1")
+    .replace(/^./, (c) => c.toUpperCase())
+    .trim();
+};
+
+// Turns a Mongoose error into something the user can act on — naming the field
+// that actually failed instead of a generic "failed to save".
+const describeSaveError = (error) => {
+  if (error?.name === "ValidationError" && error.errors) {
+    const fields = Object.keys(error.errors);
+    const messages = fields.map((path) => {
+      const err = error.errors[path];
+      const label = fieldLabel(path);
+
+      if (err.kind === "required") return `${label} is required`;
+      if (err.kind === "enum") {
+        const allowed = (err.properties?.enumValues || []).join(", ");
+        return `${label} must be one of: ${allowed}`;
+      }
+      if (err.kind === "Number") return `${label} must be a number`;
+      return `${label}: ${err.message}`;
+    });
+    return { fields, message: messages.join(". ") };
+  }
+
+  if (error?.code === 11000) {
+    const fields = Object.keys(error.keyPattern || error.keyValue || {});
+    return {
+      fields,
+      message: `${fields.map(fieldLabel).join(", ")} already exists`,
+    };
+  }
+
+  if (error?.name === "CastError") {
+    return {
+      fields: [error.path],
+      message: `${fieldLabel(error.path)} has an invalid value`,
+    };
+  }
+
+  return null;
+};
+
+// Optional enum fields arrive as "" from the form when nothing is picked, and
+// Mongoose rejects "" as an invalid enum value. Treat blank as "not provided".
+const stripBlankOptionals = (body) => {
+  const cleaned = { ...body };
+  ["expertiseLevel", "designation", "experience", "email", "alternatePhoneNo"].forEach(
+    (key) => {
+      if (typeof cleaned[key] === "string" && cleaned[key].trim() === "") {
+        delete cleaned[key];
+      }
+    }
+  );
+  return cleaned;
+};
+
 // Create Vendor
 exports.createVendor = async (req, res) => {
   try {
-    const newVendor = new Vendor(req.body);
+    const newVendor = new Vendor(stripBlankOptionals(req.body));
     const savedVendor = await newVendor.save();
     res.status(201).json({ success: true, vendor: savedVendor });
   } catch (error) {
     console.error("Create Vendor Error:", error);
-    res
-      .status(500)
-      .json({ success: false, message: "Failed to create vendor", error });
+
+    const described = describeSaveError(error);
+    if (described) {
+      return res.status(400).json({
+        success: false,
+        message: described.message,
+        fields: described.fields,
+      });
+    }
+
+    res.status(500).json({ success: false, message: "Failed to create vendor" });
   }
 };
 
@@ -313,6 +382,15 @@ exports.updateVendor = async (req, res) => {
         updatedVendorData[key] === undefined && delete updatedVendorData[key]
     );
 
+    // ...and blank optional fields, which Mongoose would reject as bad enums
+    ["expertiseLevel", "designation", "experience", "email", "alternatePhoneNo"].forEach(
+      (key) => {
+        if (typeof updatedVendorData[key] === "string" && updatedVendorData[key].trim() === "") {
+          delete updatedVendorData[key];
+        }
+      }
+    );
+
     const updatedVendor = await Vendor.findByIdAndUpdate(
       vendorId,
       updatedVendorData,
@@ -331,9 +409,17 @@ exports.updateVendor = async (req, res) => {
     res.status(200).json({ success: true, vendor: updatedVendor });
   } catch (error) {
     console.error("Error updating vendor:", error);
-    res
-      .status(500)
-      .json({ success: false, message: "Failed to update vendor", error });
+
+    const described = describeSaveError(error);
+    if (described) {
+      return res.status(400).json({
+        success: false,
+        message: described.message,
+        fields: described.fields,
+      });
+    }
+
+    res.status(500).json({ success: false, message: "Failed to update vendor" });
   }
 };
 
