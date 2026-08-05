@@ -1,13 +1,6 @@
 const Inventory = require("../models/inventory.model");
 const Maintenance = require("../models/maintenance.model");
-const path = require("path");
-const fs = require("fs");
-
-// Ensure uploads directory exists
-const uploadDir = path.join(__dirname, "..", "Uploads", "inventory");
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
+const { saveImage } = require("../utils/imageUpload");
 
 exports.createInventory = async (req, res) => {
   try {
@@ -32,7 +25,7 @@ exports.createInventory = async (req, res) => {
 
     let image = null;
     if (req.file) {
-      image = `Uploads/inventory/${req.file.filename}`;
+      image = await saveImage(req.file, "inventory");
     }
 
     const inventory = new Inventory({

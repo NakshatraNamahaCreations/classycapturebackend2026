@@ -83,7 +83,14 @@ exports.loginAdmin = async (req, res) => {
     const ok = await bcrypt.compare(password, admin.password);
     if (!ok) return res.status(400).json({ success: false, message: "Invalid credentials" });
 
-    const token = jwt.sign({ id: admin._id, role: admin.role }, process.env.JWT_SECRET || "dev_secret", { expiresIn: "7d" });
+    // No fallback secret on purpose — a guessable default lets anyone forge
+    // admin tokens. Fail loudly instead so a misconfigured deploy can't sign.
+    if (!process.env.JWT_SECRET) {
+      console.error("JWT_SECRET is not set — refusing to issue a token.");
+      return res.status(500).json({ success: false, message: "Server auth is not configured" });
+    }
+
+    const token = jwt.sign({ id: admin._id, role: admin.role }, process.env.JWT_SECRET, { expiresIn: "7d" });
 
     return res.json({
       success: true,

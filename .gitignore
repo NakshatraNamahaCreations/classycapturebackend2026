@@ -29,3 +29,6 @@ ccbackend.zip
 *.njsproj
 *.sln
 *.sw?
+
+# never commit archives — the last one leaked .env
+*.zip

@@ -11,13 +11,15 @@ const {
   getPendingEventsToCollect,
   getPendingEventsCount,
   countPendingServicesToSort,
-  listPendingServicesToSort
+  listPendingServicesToSort,
+  countPendingProjects
 } = require("../Controllers/collectedDataController");
 
 // Create/Update a single service unit
 router.post("/", addOrUpdateServiceUnitData);
 router.get("/pending-events", getPendingEventsToCollect);
 router.get("/pending-events/count", getPendingEventsCount);
+router.get("/pending-projects/count", countPendingProjects);
 
 router.get("/sorting/pending-services/count", countPendingServicesToSort);
 router.get("/sorting/pending-services", listPendingServicesToSort);

@@ -573,6 +573,36 @@ exports.getServiceUnitById = async (req, res) => {
   }
 };
 
+// Projects that have entered post-production but aren't delivered yet — the
+// counterpart to the Project Delivery tile (quotations with bookingStatus
+// "Completed"). Grouped by quotation so a project counts once no matter how
+// many collected-data records it has.
+exports.countPendingProjects = async (req, res) => {
+  try {
+    const result = await CollectedData.aggregate([
+      { $group: { _id: "$quotationId" } },
+      {
+        $lookup: {
+          from: "quotations",
+          localField: "_id",
+          foreignField: "_id",
+          as: "quotation",
+        },
+      },
+      { $unwind: "$quotation" },
+      { $match: { "quotation.bookingStatus": { $ne: "Completed" } } },
+      { $count: "count" },
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      count: result[0]?.count || 0,
+    });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: e.message });
+  }
+};
+
 exports.getPendingEventsCount = async (req, res) => {
   try {
     const today = new Date();
