@@ -4,13 +4,40 @@ const VendorInventory = require("../models/vendorInventory");
 const dayjs = require("dayjs");
 const Quotation = require("../models/quotation.model");
 
-// "bankDetails.branch" -> "Branch", "expertiseLevel" -> "Expertise Level"
-const fieldLabel = (path) => {
-  const last = String(path).split(".").pop();
-  return last
+// Nested array paths look like "equipmentDetails.0.models.1"; the index alone
+// is meaningless to a user, so drop it and name the thing that failed.
+const FRIENDLY_LABELS = {
+  "equipmentDetails.qty": "Equipment quantity",
+  "equipmentDetails.name": "Equipment name",
+  "equipmentDetails.models": "Equipment model name",
+  "specialization.name": "Specialization name",
+  "specialization.salary": "Specialization salary",
+};
+
+const prettify = (s) =>
+  String(s)
     .replace(/([A-Z])/g, " $1")
     .replace(/^./, (c) => c.toUpperCase())
     .trim();
+
+// "bankDetails.branch" -> "Branch", "equipmentDetails.0.models.1" -> "Equipment model name"
+const fieldLabel = (path) => {
+  const parts = String(path)
+    .split(".")
+    .filter((p) => p !== "" && !/^\d+$/.test(p));
+
+  if (!parts.length) return "Field";
+
+  const last = parts[parts.length - 1];
+  const parent = parts.length > 1 ? parts[parts.length - 2] : "";
+
+  const mapped = FRIENDLY_LABELS[`${parent}.${last}`];
+  if (mapped) return mapped;
+
+  // bank fields read fine on their own ("Branch", "IFSC")
+  if (parent === "bankDetails" || !parent) return prettify(last);
+
+  return `${prettify(parent)} ${prettify(last).toLowerCase()}`;
 };
 
 // Turns a Mongoose error into something the user can act on — naming the field
