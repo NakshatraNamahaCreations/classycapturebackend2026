@@ -128,6 +128,9 @@ app.use("/api", async (req, res, next) => {
   }
 });
 
+// Turn "Failed to create X" into "Branch is required" for every /api route.
+app.use("/api", require("./middleware/explainSaveErrors"));
+
 app.use("/api/category", categoryRoutes);
 app.use("/api/service", serviceRoutes);
 app.use("/api/complementary", complementaryRoutes);

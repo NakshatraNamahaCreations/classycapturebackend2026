@@ -4,79 +4,9 @@ const VendorInventory = require("../models/vendorInventory");
 const dayjs = require("dayjs");
 const Quotation = require("../models/quotation.model");
 
-// Nested array paths look like "equipmentDetails.0.models.1"; the index alone
-// is meaningless to a user, so drop it and name the thing that failed.
-const FRIENDLY_LABELS = {
-  "equipmentDetails.qty": "Equipment quantity",
-  "equipmentDetails.name": "Equipment name",
-  "equipmentDetails.models": "Equipment model name",
-  "specialization.name": "Specialization name",
-  "specialization.salary": "Specialization salary",
-};
+// shared so every controller reports failures the same way
+const { fieldLabel, describeSaveError } = require("../utils/saveErrors");
 
-const prettify = (s) =>
-  String(s)
-    .replace(/([A-Z])/g, " $1")
-    .replace(/^./, (c) => c.toUpperCase())
-    .trim();
-
-// "bankDetails.branch" -> "Branch", "equipmentDetails.0.models.1" -> "Equipment model name"
-const fieldLabel = (path) => {
-  const parts = String(path)
-    .split(".")
-    .filter((p) => p !== "" && !/^\d+$/.test(p));
-
-  if (!parts.length) return "Field";
-
-  const last = parts[parts.length - 1];
-  const parent = parts.length > 1 ? parts[parts.length - 2] : "";
-
-  const mapped = FRIENDLY_LABELS[`${parent}.${last}`];
-  if (mapped) return mapped;
-
-  // bank fields read fine on their own ("Branch", "IFSC")
-  if (parent === "bankDetails" || !parent) return prettify(last);
-
-  return `${prettify(parent)} ${prettify(last).toLowerCase()}`;
-};
-
-// Turns a Mongoose error into something the user can act on — naming the field
-// that actually failed instead of a generic "failed to save".
-const describeSaveError = (error) => {
-  if (error?.name === "ValidationError" && error.errors) {
-    const fields = Object.keys(error.errors);
-    const messages = fields.map((path) => {
-      const err = error.errors[path];
-      const label = fieldLabel(path);
-
-      if (err.kind === "required") return `${label} is required`;
-      if (err.kind === "enum") {
-        const allowed = (err.properties?.enumValues || []).join(", ");
-        return `${label} must be one of: ${allowed}`;
-      }
-      if (err.kind === "Number") return `${label} must be a number`;
-      return `${label}: ${err.message}`;
-    });
-    return { fields, message: messages.join(". ") };
-  }
-
-  if (error?.code === 11000) {
-    const fields = Object.keys(error.keyPattern || error.keyValue || {});
-    return {
-      fields,
-      message: `${fields.map(fieldLabel).join(", ")} already exists`,
-    };
-  }
-
-  if (error?.name === "CastError") {
-    return {
-      fields: [error.path],
-      message: `${fieldLabel(error.path)} has an invalid value`,
-    };
-  }
-
-  return null;
-};
 
 // Optional enum fields arrive as "" from the form when nothing is picked, and
 // Mongoose rejects "" as an invalid enum value. Treat blank as "not provided".
