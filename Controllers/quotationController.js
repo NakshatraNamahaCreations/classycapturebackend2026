@@ -135,6 +135,15 @@ exports.createQuotation = async (req, res) => {
     });
 
     const savedQuotation = await newQuotation.save();
+
+    // A quotation can be created already Booked (e.g. a complementary quote
+    // with no payment to collect). The leads list reads the Query's status,
+    // so it has to follow — otherwise the query keeps showing "Create Quote".
+    if (savedQuotation.bookingStatus === "Booked" && savedQuotation.queryId) {
+      await Query.findByIdAndUpdate(savedQuotation.queryId, {
+        $set: { status: "Booked" },
+      });
+    }
     return res.status(201).json({
       success: true,
       message: "Quotation created successfully",
