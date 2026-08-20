@@ -1,6 +1,21 @@
 const Quotation = require("../models/quotation.model");
 const Vendor = require("../models/vendor.model");
 const Query = require("../models/query");
+
+// The UI sends dueDate as DD-MM-YYYY, which new Date() reads as an Invalid
+// Date. Parse that shape explicitly so payment records don't fail to save.
+const parseFlexibleDate = (value) => {
+  if (!value) return new Date();
+  const str = String(value).trim();
+  const dmy = str.match(/^(d{1,2})[-/](d{1,2})[-/](d{4})$/);
+  if (dmy) {
+    const [, d, m, y] = dmy;
+    const parsed = new Date(`${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}T00:00:00`);
+    if (!isNaN(parsed.getTime())) return parsed;
+  }
+  const fallback = new Date(str);
+  return isNaN(fallback.getTime()) ? new Date() : fallback;
+};
 const mongoose = require("mongoose");
 const dayjs = require("dayjs");
 const moment = require("moment");
@@ -2370,7 +2385,7 @@ exports.updateInstallmentStatus = async (req, res) => {
             paymentMethod: String(paymentMode).trim(),
             // for tracker we store a Date, so keep as-is
             // (if you send DD-MM-YYYY here, JS Date() can fail. Better to send ISO from frontend.)
-            paymentDate: dueDate ? new Date(dueDate) : new Date(),
+            paymentDate: parseFlexibleDate(dueDate),
             paidTo: String(paidTo).trim(),
           });
         } catch (e) {
@@ -2446,7 +2461,7 @@ exports.updateInstallmentStatus = async (req, res) => {
             installmentId: createdInst._id,
             paidAmount: Number(planned) || 0,
             paymentMethod: String(paymentMode).trim(),
-            paymentDate: dueDate ? new Date(dueDate) : new Date(),
+            paymentDate: parseFlexibleDate(dueDate),
             paidTo: String(paidTo).trim(),
           });
         } catch (e) {
@@ -2563,7 +2578,7 @@ exports.updateInstallmentFirstPayment = async (req, res) => {
             installmentId: inst._id,
             paidAmount: paidNow,
             paymentMethod: paymentMode || inst.paymentMode || "Other",
-            paymentDate: dueDate ? new Date(dueDate) : new Date(),
+            paymentDate: parseFlexibleDate(dueDate),
             paidTo: String(paidTo).trim(),
           },
         ],
