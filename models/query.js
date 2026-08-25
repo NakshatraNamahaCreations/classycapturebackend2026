@@ -46,7 +46,7 @@ const querySchema = new mongoose.Schema(
     ],
     status: { 
       type: String, 
-      enum: ["Booked", "Created", "Quotation", "Call Later", "Not Interested"], 
+      enum: ["Booked", "Created", "Quotation", "Call Later", "Not Interested", "Cancelled"], 
       default: "Created" 
     }, // Only main status
     comment: { type: String },

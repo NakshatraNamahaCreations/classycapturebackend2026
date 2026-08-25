@@ -328,3 +328,28 @@ exports.createMaintenance = async (req, res) => {
     });
   }
 };
+
+// Remove an inventory item. The UI asks for confirmation before calling this.
+exports.deleteInventory = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const deleted = await Inventory.findByIdAndDelete(id);
+    if (!deleted) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Inventory item not found" });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Inventory item deleted successfully",
+      data: { id },
+    });
+  } catch (error) {
+    console.error("Delete Inventory Error:", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "Failed to delete inventory item" });
+  }
+};

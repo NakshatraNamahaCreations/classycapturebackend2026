@@ -1772,10 +1772,26 @@ exports.updateBookingStatus = async (req, res) => {
     );
 
     let updatedQuery = null;
-    if (queryId) {
+    // Keep the customer/query in step with the booking. The request may send
+    // either the Mongo _id or the human "CC-Queryxxx" id, and it may not send
+    // one at all — so fall back to the id stored on the quotation itself.
+    const QUERY_STATUS_FOR = {
+      Booked: "Booked",
+      Completed: "Booked",
+      Cancelled: "Cancelled",
+      "Not Booked": "Quotation",
+    };
+
+    const targetQueryId = queryId || updatedQuotation?.queryId;
+    if (targetQueryId) {
+      const or = [{ queryId: String(targetQueryId) }];
+      if (mongoose.isValidObjectId(targetQueryId)) {
+        or.push({ _id: targetQueryId });
+      }
+
       updatedQuery = await Query.findOneAndUpdate(
-        { queryId: queryId },
-        { $set: { status: finalStatus } },
+        { $or: or },
+        { $set: { status: QUERY_STATUS_FOR[finalStatus] || finalStatus } },
         { new: true }
       );
     }
