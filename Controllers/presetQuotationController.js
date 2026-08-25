@@ -46,7 +46,10 @@ const getPresetQuotations = asyncHandler(async (req, res) => {
 
   const query = {};
   if (search) {
-    query.category = { $regex: search, $options: "i" };
+    // Match the category or any service inside the preset, so searching a
+    // service like "Traditional Photographer" finds the presets containing it.
+    const regex = { $regex: search, $options: "i" };
+    query.$or = [{ category: regex }, { "services.serviceName": regex }];
   }
 
   const total = await PresetQuotation.countDocuments(query);
