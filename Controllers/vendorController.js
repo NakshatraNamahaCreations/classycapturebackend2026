@@ -51,14 +51,24 @@ exports.getAllVendors = async (req, res) => {
     const skip = (parseInt(page) - 1) * parseInt(limit);
     const searchRegex = new RegExp(search, "i");
 
-    const filter = {
-      $or: [
-        { name: searchRegex },
-        { contactPerson: searchRegex },
-        { phoneNo: searchRegex },
-        { email: searchRegex },
-      ],
-    };
+    // Search across every field shown in the vendors table: name, category,
+    // phone, specialization ("Field") and expertise level ("Level").
+    const filter = search
+      ? {
+          $or: [
+            { name: searchRegex },
+            { contactPerson: searchRegex },
+            { phoneNo: searchRegex },
+            { alternatePhoneNo: searchRegex },
+            { email: searchRegex },
+            { category: searchRegex },
+            { expertiseLevel: searchRegex },
+            { experience: searchRegex },
+            { address: searchRegex },
+            { "specialization.name": searchRegex },
+          ],
+        }
+      : {};
 
     const [vendors, total] = await Promise.all([
       Vendor.find(filter)
