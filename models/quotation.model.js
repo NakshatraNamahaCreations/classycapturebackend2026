@@ -657,6 +657,10 @@ const QuotationSchema = new mongoose.Schema(
 
     // discountPercent: Number,
     discountValue: Number,
+    // "amount" = flat rupees, "percent" = share of the pre-discount total.
+    // discountValue always stores the resolved rupee amount.
+    discountType: { type: String, enum: ["amount", "percent"], default: "amount" },
+    discountPercent: { type: Number, default: 0 },
     gstApplied: Boolean,
     gstValue: Number,
     marginAmount: Number,
