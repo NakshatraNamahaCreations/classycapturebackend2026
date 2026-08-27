@@ -1896,6 +1896,23 @@ exports.countTodaysEvents = async (req, res) => {
   }
 };
 
+// Jobs that are confirmed but not yet delivered — the dashboard's
+// "Confirmed Bookings" figure.
+exports.countBookedQuotations = async (req, res) => {
+  try {
+    const count = await Quotation.countDocuments({ bookingStatus: "Booked" });
+
+    return res.status(200).json({ success: true, count });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({
+      success: false,
+      message: "Server Error: Could not retrieve booked quotations count",
+      error: error.message,
+    });
+  }
+};
+
 exports.countCompletedQuotations = async (req, res) => {
   try {
     const count = await Quotation.countDocuments({

@@ -28,6 +28,7 @@ const {
   countPendingPaymentQuotations,
   countTodaysEvents,
   countCompletedQuotations,
+  countBookedQuotations,
   getYearlyClientPayments,
   getYearlyVendorPayments,
   updateGroupOrNote,
@@ -100,6 +101,7 @@ router.delete("/:quotationId/instruction/delete", deleteClientInstruction);
 router.get("/count/pending-payments", countPendingPaymentQuotations);
 router.get("/count/todays-events", countTodaysEvents);
 router.get("/count/completed", countCompletedQuotations);
+router.get("/count/booked", countBookedQuotations);
 
 router.get("/count/pending-albums", getPendingAlbumsCount);
 
