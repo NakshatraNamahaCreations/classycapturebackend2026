@@ -540,7 +540,9 @@ const ServiceSchema = new mongoose.Schema(
     serviceName: String,
     price: Number,
     marginPrice: Number,
-    qty: { type: Number, default: 1, min: 1 },
+    // 0 is allowed so a service can be dropped from a booking without deleting
+    // the row and losing its history.
+    qty: { type: Number, default: 1, min: 0 },
     assignedVendors: { type: [AssignedVendorSchema], default: [] },
     assignedAssistants: { type: [AssignedAssistantSchema], default: [] },
   },
@@ -687,7 +689,9 @@ const QuotationSchema = new mongoose.Schema(
 QuotationSchema.pre("save", function (next) {
   this.packages?.forEach((pkg) => {
     pkg.services?.forEach((s) => {
-      const desired = Math.max(1, s.qty || 1);
+      // `s.qty || 1` would turn a deliberate 0 back into 1, so read it directly
+      const raw = Number(s.qty);
+      const desired = Number.isFinite(raw) ? Math.max(0, Math.floor(raw)) : 1;
       if (!Array.isArray(s.assignedVendors)) s.assignedVendors = [];
       while (s.assignedVendors.length < desired) s.assignedVendors.push({});
       if (!Array.isArray(s.assignedAssistants)) s.assignedAssistants = [];
