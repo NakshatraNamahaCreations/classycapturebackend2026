@@ -86,14 +86,42 @@ exports.createOrUpdateLead = async (req, res) => {
       }
     }
 
-    // Check if any phone number already exists in the database
+    // A customer can have several events over time, so an existing phone
+    // number is not an error — the new query belongs on the lead that already
+    // holds that person, rather than creating a second customer record.
     const existingLead = await Lead.findOne({
       "persons.phoneNo": { $in: persons.map((p) => p.phoneNo) },
     });
 
     if (existingLead) {
-      return res.status(400).json({
-        message: `${persons[0].phoneNo} number is already registered. Please check in the search box.`,
+      const followUpQuery = new Query({
+        eventDetails: eventDetails.map((event) => ({
+          category: event.category,
+          eventStartDate: new Date(event.eventStartDate),
+          eventEndDate: new Date(event.eventEndDate),
+        })),
+        queryId: await generateQueryId(),
+        status: "Created",
+      });
+      await followUpQuery.save();
+
+      // add anyone genuinely new; skip people already on the lead
+      const knownPhones = existingLead.persons.map((p) => p.phoneNo);
+      const newPeople = persons.filter((p) => !knownPhones.includes(p.phoneNo));
+      if (newPeople.length) existingLead.persons.push(...newPeople);
+
+      existingLead.queries.push(followUpQuery._id);
+      await existingLead.save();
+
+      const populated = await Lead.findById(existingLead._id)
+        .populate("queries")
+        .lean();
+
+      return res.status(201).json({
+        message: "New query added to the existing customer",
+        lead: populated,
+        query: followUpQuery,
+        attachedToExistingLead: true,
       });
     }
 
@@ -164,18 +192,12 @@ exports.addQueryAndPerson = async (req, res) => {
       return res.status(404).json({ message: "Lead not found" });
     }
 
-    // ✅ Check for duplicate phone numbers only if persons provided
-    if (personsToAdd.length > 0) {
-      const existingPhoneNumbers = lead.persons.map((p) => p.phoneNo);
-      const duplicatePhone = personsToAdd.find((p) =>
-        existingPhoneNumbers.includes(p.phoneNo)
-      );
-      if (duplicatePhone) {
-        return res.status(400).json({
-          message: `${duplicatePhone.phoneNo} is already registered with this lead.`,
-        });
-      }
-    }
+    // Adding another query for someone already on this lead is normal, so a
+    // person who is already here is simply skipped instead of rejected.
+    const knownPhones = lead.persons.map((p) => p.phoneNo);
+    const newPeople = personsToAdd.filter(
+      (p) => !knownPhones.includes(p.phoneNo)
+    );
 
     // Generate a new queryId
     const queryId = await generateQueryId(); // Ensure this function exists
@@ -193,8 +215,8 @@ exports.addQueryAndPerson = async (req, res) => {
     await query.save();
 
     // ✅ Only add persons if provided
-    if (personsToAdd.length > 0) {
-      lead.persons.push(...personsToAdd);
+    if (newPeople.length > 0) {
+      lead.persons.push(...newPeople);
     }
 
     // Add the new query to the lead
@@ -210,7 +232,7 @@ exports.addQueryAndPerson = async (req, res) => {
 
     return res.status(200).json({
       message: `Query added successfully${
-        personsToAdd.length > 0 ? " with new persons" : ""
+        newPeople.length > 0 ? " with new persons" : ""
       }`,
       lead: populatedLead,
     });
