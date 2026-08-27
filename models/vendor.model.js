@@ -62,12 +62,20 @@
 
 const mongoose = require("mongoose");
 
+// Some vendors are paid by UPI only and have no bank account on file, so the
+// bank fields are required just when no UPI ID is given. One of the two must
+// be present for the vendor to be payable.
+const requiredWithoutUpi = function () {
+  return !String(this.upiId || "").trim();
+};
+
 const BankDetailsSchema = new mongoose.Schema({
-  bankName: { type: String, required: true },
-  accountHolder: { type: String, required: true },
-  accountNumber: { type: String, required: true },
-  ifsc: { type: String, required: true },
-  branch: { type: String, required: true },
+  bankName: { type: String, required: requiredWithoutUpi },
+  accountHolder: { type: String, required: requiredWithoutUpi },
+  accountNumber: { type: String, required: requiredWithoutUpi },
+  ifsc: { type: String, required: requiredWithoutUpi },
+  branch: { type: String, required: requiredWithoutUpi },
+  upiId: { type: String, trim: true },
   panNumber: { type: String },
   aadhaarNumber: { type: String, },
 });

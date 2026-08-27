@@ -47,28 +47,38 @@ exports.createVendor = async (req, res) => {
 // Get All Vendors with pagination and search
 exports.getAllVendors = async (req, res) => {
   try {
-    const { page, limit, search = "" } = req.query;
+    const { page, limit, search = "", category = "" } = req.query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
     const searchRegex = new RegExp(search, "i");
 
+    const filter = {};
+
     // Search across every field shown in the vendors table: name, category,
     // phone, specialization ("Field") and expertise level ("Level").
-    const filter = search
-      ? {
-          $or: [
-            { name: searchRegex },
-            { contactPerson: searchRegex },
-            { phoneNo: searchRegex },
-            { alternatePhoneNo: searchRegex },
-            { email: searchRegex },
-            { category: searchRegex },
-            { expertiseLevel: searchRegex },
-            { experience: searchRegex },
-            { address: searchRegex },
-            { "specialization.name": searchRegex },
-          ],
-        }
-      : {};
+    if (search) {
+      filter.$or = [
+        { name: searchRegex },
+        { contactPerson: searchRegex },
+        { phoneNo: searchRegex },
+        { alternatePhoneNo: searchRegex },
+        { email: searchRegex },
+        { category: searchRegex },
+        { expertiseLevel: searchRegex },
+        { experience: searchRegex },
+        { address: searchRegex },
+        { "specialization.name": searchRegex },
+      ];
+    }
+
+    // Lets the dashboard link straight to just inhouse or outsourced vendors.
+    // Accepts the stored value or a short form ("Outsource", "Inhouse").
+    if (category) {
+      filter.category = /^out/i.test(category)
+        ? "Outsource Vendor"
+        : /^in/i.test(category)
+        ? "Inhouse Vendor"
+        : category;
+    }
 
     const [vendors, total] = await Promise.all([
       Vendor.find(filter)
