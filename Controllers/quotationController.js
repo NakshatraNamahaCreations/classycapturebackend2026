@@ -7,7 +7,7 @@ const Query = require("../models/query");
 const parseFlexibleDate = (value) => {
   if (!value) return new Date();
   const str = String(value).trim();
-  const dmy = str.match(/^(d{1,2})[-/](d{1,2})[-/](d{4})$/);
+  const dmy = str.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
   if (dmy) {
     const [, d, m, y] = dmy;
     const parsed = new Date(`${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}T00:00:00`);
