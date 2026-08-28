@@ -68,6 +68,8 @@ exports.createQuotation = async (req, res) => {
       installments = [],
       totalAmount = 0,
       discountValue = 0,
+      discountType = "amount",
+      discountPercent = 0,
       gstApplied = false,
       gstValue = 0,
       marginAmount = 0,
@@ -133,8 +135,11 @@ exports.createQuotation = async (req, res) => {
       packages,
       installments: processedInstallments,
       totalAmount,
-      // discountPercent,
       discountValue,
+      // keep how the discount was entered, so a percentage stays a percentage
+      // and still recalculates if the packages change later
+      discountType,
+      discountPercent,
       gstApplied,
       gstValue,
       marginAmount,
