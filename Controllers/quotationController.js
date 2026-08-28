@@ -204,6 +204,8 @@ exports.updateQuotation = async (req, res) => {
       // ✅ NEW
       additionalServices,
       totalAdditionalServiceAmount,
+      discountType,
+      discountPercent,
     } = req.body;
 
     const quotation = await Quotation.findById(id);
@@ -226,6 +228,9 @@ exports.updateQuotation = async (req, res) => {
     // if (discountPercent !== undefined)
     //   quotation.discountPercent = discountPercent;
     if (discountValue !== undefined) quotation.discountValue = discountValue;
+    if (discountType !== undefined) quotation.discountType = discountType;
+    if (discountPercent !== undefined)
+      quotation.discountPercent = discountPercent;
     if (gstApplied !== undefined) quotation.gstApplied = gstApplied;
     if (gstValue !== undefined) quotation.gstValue = gstValue;
     if (marginAmount !== undefined) quotation.marginAmount = marginAmount;

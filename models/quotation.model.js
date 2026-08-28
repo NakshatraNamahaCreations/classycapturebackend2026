@@ -686,6 +686,15 @@ const QuotationSchema = new mongoose.Schema(
 );
 
 // Keep vendor/assistant arrays within qty bounds
+// Older documents stored bookingStatus as "NotBooked", which is not in the
+// current enum — Mongoose then refuses to save the document at all, so every
+// edit fails. Normalise it rather than letting the whole save die.
+QuotationSchema.pre("save", function (next) {
+  const LEGACY = { NotBooked: "Not Booked", "Not booked": "Not Booked" };
+  if (LEGACY[this.bookingStatus]) this.bookingStatus = LEGACY[this.bookingStatus];
+  next();
+});
+
 QuotationSchema.pre("save", function (next) {
   this.packages?.forEach((pkg) => {
     pkg.services?.forEach((s) => {
